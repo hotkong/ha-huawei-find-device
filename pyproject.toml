@@ -1,0 +1,16 @@
+[project]
+name = "ha-huawei-find-device"
+version = "0.4.0"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", "tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

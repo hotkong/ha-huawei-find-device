@@ -1,0 +1,12 @@
+{
+  "domain": "huawei_find",
+  "name": "Huawei Cloud Find Device",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/hotkong/ha-huawei-find-device",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/hotkong/ha-huawei-find-device/issues",
+  "requirements": [],
+  "version": "0.4.0"
+}

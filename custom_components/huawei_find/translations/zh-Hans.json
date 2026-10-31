@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "连接华为云",
+        "description": "在电脑浏览器登录 https://cloud.huawei.com/ ，打开「查找设备」，按 F12 → 网络(Network)，点一次定位，然后复制请求头里的 Cookie 整行粘贴到下面。",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "devices": {
+        "title": "选择设备",
+        "description": "默认全选。每台设备会生成一个定位传感器和 GPS 追踪器。",
+        "data": {
+          "devices": "设备"
+        }
+      },
+      "reauth_confirm": {
+        "title": "重新授权华为云",
+        "description": "华为云登录态已失效，请重新登录后粘贴新的 Cookie。",
+        "data": {
+          "cookie": "Cookie"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Cookie 无效或已过期，请重新登录华为云后复制。",
+      "cannot_connect": "无法连接华为云。",
+      "no_devices": "该账号下没有可用设备。"
+    },
+    "abort": {
+      "already_configured": "该华为账号已经添加过了。",
+      "reauth_successful": "重新授权成功。",
+      "reauth_failed": "重新授权失败。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "地址反查设置",
+        "description": "华为云接口只返回经纬度、不返回地址；如需中文地址，请选择第三方反查服务。",
+        "data": {
+          "geocode_provider": "地址来源",
+          "amap_key": "高德 Web 服务 Key（仅高德需要）",
+          "scan_interval": "自动刷新间隔（分钟，0 = 关闭）"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh_all": {
+        "name": "刷新全部定位"
+      },
+      "refresh": {
+        "name": "刷新定位"
+      }
+    },
+    "sensor": {
+      "location": {
+        "name": "最后定位"
+      }
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "刷新定位",
+      "description": "让华为云查询一次账号下全部设备的位置。",
+      "fields": {}
+    }
+  }
+}

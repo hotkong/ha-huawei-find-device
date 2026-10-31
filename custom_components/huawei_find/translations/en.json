@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Huawei Cloud",
+        "description": "Log in to https://cloud.huawei.com/, open \"Find Device\", press F12 -> Network, trigger one locate request, then copy the whole Cookie request header and paste it below.",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "devices": {
+        "title": "Select devices",
+        "description": "All devices are selected by default. Each device gets its own location sensor and GPS tracker.",
+        "data": {
+          "devices": "Devices"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Huawei Cloud",
+        "description": "The Huawei Cloud session has expired. Log in again and paste a fresh Cookie.",
+        "data": {
+          "cookie": "Cookie"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid or expired Cookie. Log in to Huawei Cloud again and copy a fresh one.",
+      "cannot_connect": "Cannot reach Huawei Cloud.",
+      "no_devices": "No devices found for this account."
+    },
+    "abort": {
+      "already_configured": "This Huawei account is already configured.",
+      "reauth_successful": "Re-authentication successful.",
+      "reauth_failed": "Re-authentication failed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Reverse geocoding",
+        "description": "The Huawei Cloud API returns coordinates only. Pick a third-party service to resolve a readable address.",
+        "data": {
+          "geocode_provider": "Address provider",
+          "amap_key": "AMap web service key (AMap only)",
+          "scan_interval": "Automatic refresh interval (minutes, 0 = disabled)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh_all": {
+        "name": "Refresh all locations"
+      },
+      "refresh": {
+        "name": "Refresh location"
+      }
+    },
+    "sensor": {
+      "location": {
+        "name": "Last location"
+      }
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Refresh location",
+      "description": "Ask Huawei Cloud to locate every device on the account.",
+      "fields": {}
+    }
+  }
+}
