@@ -29,7 +29,7 @@ the phone is asked to report its location right away.
 - 每台设备一个定位传感器：状态显示地址（或 `纬度, 经度`），属性含坐标、精度、电量、是否充电、是否锁屏；
 - 每台设备一个 `device_tracker`（GPS 源），可直接绑定到 `person`，在原生地图上显示；
 - 结果持久化，HA 重启后保留上次位置；单次查询失败时**保留上次坐标**并标记 `stale: true`，不会把实体清空；
-- Cookie 自动回存（华为云会轮换会话 Cookie）+ 每 6 小时保活 + 失效时弹通知并引导重新授权；
+- Cookie 自动回存 + 每 10 分钟 `heartbeatCheck` 保活（与网页版同机制，会轮换 CSRF Token）+ 失效时弹通知并引导重新授权；
 - 可选地址反查：高德 Web 服务 或 OpenStreetMap Nominatim；
 - 可选自动刷新间隔（0 = 关闭），不想写自动化也能定时查询。
 

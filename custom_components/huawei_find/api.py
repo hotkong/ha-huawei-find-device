@@ -28,6 +28,7 @@ from .const import (
     BASE_URL,
     EP_DEVICE_LIST,
     EP_LOCATE,
+    EP_HEARTBEAT,
     EP_QUERY,
     EP_SHARE_GRANTS,
     LOCATE_TIMEOUT,
@@ -262,9 +263,14 @@ class HuaweiFindClient:
             )
         return self._session
 
-    async def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         headers = {
-            "Content-Type": "application/json;charset=UTF-8",
             "Accept": "application/json, text/plain, */*",
             "X-Requested-With": "XMLHttpRequest",
             "Origin": BASE_URL,
@@ -272,6 +278,8 @@ class HuaweiFindClient:
             "User-Agent": USER_AGENT,
             "x-hw-framework-type": "web",
         }
+        if payload is not None:
+            headers["Content-Type"] = "application/json;charset=UTF-8"
         if self.csrf_token:
             headers["CSRFToken"] = self.csrf_token
         if self.user_id:
@@ -279,8 +287,13 @@ class HuaweiFindClient:
 
         session = await self._ensure_session()
         try:
-            async with session.post(
-                f"{BASE_URL}{path}", json=payload, headers=headers, cookies=self._cookies
+            async with session.request(
+                method,
+                f"{BASE_URL}{path}",
+                json=payload,
+                params=params,
+                headers=headers,
+                cookies=self._cookies,
             ) as response:
                 status = response.status
                 text = await response.text()
@@ -289,22 +302,43 @@ class HuaweiFindClient:
             raise HuaweiFindError(f"Request to Huawei Cloud failed: {err}") from err
 
         if status in (401, 403):
-            raise HuaweiFindAuthError(f"Huawei Cloud returned HTTP {status}; the session may have expired")
+            raise HuaweiFindAuthError(
+                f"Huawei Cloud returned HTTP {status}; the session may have expired"
+            )
         if not text.lstrip().startswith("{"):
-            raise HuaweiFindAuthError("Huawei Cloud returned non-JSON content (usually means the session expired)")
+            raise HuaweiFindAuthError(
+                "Huawei Cloud returned non-JSON content (usually means the session expired)"
+            )
 
         try:
             data = json.loads(text)
         except json.JSONDecodeError as err:
-            raise HuaweiFindError(f"Unable to parse Huawei Cloud response: {text[:120]}") from err
+            raise HuaweiFindError(
+                f"Unable to parse Huawei Cloud response: {text[:120]}"
+            ) from err
 
         try:
             code = int(data.get("code", -1))
         except (TypeError, ValueError):
             code = -1
         data["_code"] = code
-
         return data
+
+    async def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", path, payload=payload)
+
+    async def async_heartbeat(self) -> bool:
+        """Keep the web session alive (the portal calls this while open)."""
+        data = await self._request(
+            "GET",
+            EP_HEARTBEAT,
+            params={"checkType": 1, "traceId": trace_id()},
+        )
+        if data["_code"] == 990:
+            raise HuaweiFindAuthError(
+                str(data.get("info") or "authentication failed (code 990)")
+            )
+        return True
 
     def _absorb_set_cookie(self, response: aiohttp.ClientResponse) -> None:
         """Huawei Cloud rotates JSESSIONID/token; persist them or the next call fails."""

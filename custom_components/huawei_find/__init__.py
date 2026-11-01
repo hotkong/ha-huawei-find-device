@@ -48,8 +48,9 @@ PLATFORMS: list[Platform] = [
 
 SERVICE_SCHEMA = vol.Schema({})
 
-# Keepalive interval: hit the device list endpoint to detect expired sessions early
-KEEPALIVE_INTERVAL = timedelta(hours=6)
+# The portal pings heartbeatCheck while a browser tab is open; doing the same
+# keeps the server-side session alive and rotates CSRFToken.
+HEARTBEAT_INTERVAL = timedelta(minutes=10)
 
 
 def signal_update(entry_id: str, device_id: str) -> str:
@@ -70,7 +71,7 @@ class HuaweiFindRuntime:
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
     locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     refreshing: set[str] = field(default_factory=set)
-    unsub_keepalive: Callable[[], None] | None = None
+    unsub_heartbeat: Callable[[], None] | None = None
     store: Store | None = None
     geocode_provider: str = GEOCODE_NONE
     amap_key: str = ""
@@ -256,15 +257,15 @@ async def _async_auto_refresh(hass: HomeAssistant, runtime: HuaweiFindRuntime) -
         await asyncio.gather(*tasks)
 
 
-async def _async_keepalive(hass: HomeAssistant, runtime: HuaweiFindRuntime) -> None:
-    """Periodic keepalive and early detection of an expired session."""
+async def _async_heartbeat(hass: HomeAssistant, runtime: HuaweiFindRuntime) -> None:
+    """Keep the session warm and detect an expired session early."""
     try:
-        await runtime.client.async_keepalive()
+        await runtime.client.async_heartbeat()
     except HuaweiFindAuthError as err:
-        _LOGGER.warning("Keepalive detected an expired session: %s", err)
+        _LOGGER.warning("Heartbeat detected an expired session: %s", err)
         _notify_reauth(hass, runtime, str(err))
     except HuaweiFindError as err:
-        _LOGGER.debug("Keepalive network error (ignored): %s", err)
+        _LOGGER.debug("Heartbeat error (ignored): %s", err)
     else:
         persistent_notification.async_dismiss(
             hass, f"{DOMAIN}_reauth_{runtime.entry.entry_id}"
@@ -332,11 +333,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             schema=SERVICE_SCHEMA,
         )
 
-    async def _keepalive(_now) -> None:
-        await _async_keepalive(hass, runtime)
+    async def _heartbeat(_now) -> None:
+        await _async_heartbeat(hass, runtime)
 
-    runtime.unsub_keepalive = async_track_time_interval(
-        hass, _keepalive, KEEPALIVE_INTERVAL
+    runtime.unsub_heartbeat = async_track_time_interval(
+        hass, _heartbeat, HEARTBEAT_INTERVAL
     )
 
     interval = int(options.get(CONF_SCAN_INTERVAL) or 0)
@@ -363,8 +364,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         runtime: HuaweiFindRuntime | None = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
         if runtime is not None:
-            if runtime.unsub_keepalive is not None:
-                runtime.unsub_keepalive()
+            if runtime.unsub_heartbeat is not None:
+                runtime.unsub_heartbeat()
             if runtime.auto_refresh_unsub is not None:
                 runtime.auto_refresh_unsub()
             await runtime.client.async_close()

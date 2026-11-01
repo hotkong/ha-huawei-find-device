@@ -7,6 +7,7 @@ EP_DEVICE_LIST = "/findDevice/getMobileDeviceList"
 EP_SHARE_GRANTS = "/findDevice/getShareGrantInfo"
 EP_LOCATE = "/findDevice/locate"
 EP_QUERY = "/findDevice/queryLocateResult"
+EP_HEARTBEAT = "/heartbeatCheck"
 
 CONF_COOKIE = "cookie"
 CONF_DEVICES = "devices"
