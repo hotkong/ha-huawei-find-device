@@ -48,6 +48,8 @@ LOCATE_RETRY_DELAY = 2.0
 # Reverse geocoding: OSM Nominatim asks for max 1 request/second
 OSM_MIN_INTERVAL = 1.1
 GEOCODE_CACHE_TTL = 600
+# Keep the previous address when the device has not really moved
+ADDRESS_KEEP_RADIUS = 300  # meters
 
 # Maximum time to wait for a locate result (seconds) and polling interval.
 LOCATE_TIMEOUT = 30

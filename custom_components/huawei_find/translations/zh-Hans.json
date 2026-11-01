@@ -59,6 +59,22 @@
     "sensor": {
       "location": {
         "name": "最后定位"
+      },
+      "battery": {
+        "name": "电池电量"
+      },
+      "position_status": {
+        "name": "上次定位状态",
+        "state": {
+          "ok": "成功",
+          "stale": "失败",
+          "unknown": "未知"
+        }
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "充电状态"
       }
     }
   },

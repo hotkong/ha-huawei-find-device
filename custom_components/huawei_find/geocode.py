@@ -33,7 +33,7 @@ _LOGGER = logging.getLogger(__name__)
 
 AMAP_URL = "https://restapi.amap.com/v3/geocode/regeo"
 OSM_URL = "https://nominatim.openstreetmap.org/reverse"
-_TIMEOUT = aiohttp.ClientTimeout(total=10)
+_TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 _OSM_LOCK = asyncio.Lock()
 _osm_last_request = 0.0
@@ -60,10 +60,16 @@ async def async_reverse_geocode(
     if cached is not None and time.monotonic() - cached[1] < GEOCODE_CACHE_TTL:
         return cached[0]
 
-    if provider == GEOCODE_AMAP:
-        address = await _amap(hass, api_key, latitude, longitude)
-    else:
-        address = await _osm(hass, latitude, longitude)
+    address = None
+    for attempt in range(2):
+        if provider == GEOCODE_AMAP:
+            address = await _amap(hass, api_key, latitude, longitude)
+        else:
+            address = await _osm(hass, latitude, longitude)
+        if address:
+            break
+        if attempt == 0:
+            await asyncio.sleep(1.5)
 
     if address:
         _prune_cache()
@@ -119,7 +125,7 @@ async def _osm(hass: HomeAssistant, latitude: float, longitude: float) -> str | 
         "zoom": 18,
         "accept-language": "zh-CN,zh,en",
     }
-    headers = {"User-Agent": "HomeAssistant-huawei_find/0.5.0"}
+    headers = {"User-Agent": "HomeAssistant-huawei_find/0.5.1"}
 
     async with _OSM_LOCK:
         wait = OSM_MIN_INTERVAL - (time.monotonic() - _osm_last_request)

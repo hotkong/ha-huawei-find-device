@@ -11,7 +11,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from . import HuaweiFindRuntime, async_refresh_device
+from . import HuaweiFindRuntime, async_refresh_device, enabled_device_ids
 from .const import CONF_AUTH_TIME, DOMAIN
 
 
@@ -62,6 +62,7 @@ class HuaweiRefreshAllButton(ButtonEntity):
         results = self._runtime.results
         return {
             "device_count": len(self._runtime.devices),
+            "active_device_count": len(enabled_device_ids(self.hass, self._runtime)),
             "refreshing": sorted(self._runtime.refreshing),
             "last_status": {
                 device["name"]: results.get(device_id, {}).get("status")
@@ -80,7 +81,7 @@ class HuaweiRefreshAllButton(ButtonEntity):
     async def _refresh_all(self) -> None:
         tasks = [
             async_refresh_device(self.hass, self._runtime, device_id)
-            for device_id in list(self._runtime.devices)
+            for device_id in enabled_device_ids(self.hass, self._runtime)
         ]
         await asyncio.gather(*tasks)
 

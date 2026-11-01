@@ -59,6 +59,22 @@
     "sensor": {
       "location": {
         "name": "Last location"
+      },
+      "battery": {
+        "name": "Battery"
+      },
+      "position_status": {
+        "name": "Last locate status",
+        "state": {
+          "ok": "OK",
+          "stale": "Failed",
+          "unknown": "Unknown"
+        }
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "Charging status"
       }
     }
   },

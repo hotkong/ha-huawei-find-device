@@ -112,6 +112,34 @@ class MergeResultTests(unittest.TestCase):
         self.assertFalse(merged["stale"])
         self.assertNotIn("address", merged)
 
+    def test_geocode_failure_keeps_previous_address_when_nearby(self):
+        previous = {
+            "status": "ok",
+            "latitude": 31.4204,
+            "longitude": 120.4460,
+            "address": "Somewhere",
+        }
+        merged = _merge_result(
+            previous,
+            {"status": "ok", "latitude": 31.4205, "longitude": 120.4461},
+        )
+        self.assertEqual(merged["address"], "Somewhere")
+        self.assertTrue(merged["address_stale"])
+
+    def test_geocode_failure_drops_address_when_moved(self):
+        previous = {
+            "status": "ok",
+            "latitude": 31.4204,
+            "longitude": 120.4460,
+            "address": "Somewhere",
+        }
+        merged = _merge_result(
+            previous,
+            {"status": "ok", "latitude": 31.50, "longitude": 120.60},
+        )
+        self.assertNotIn("address", merged)
+        self.assertFalse(merged["address_stale"])
+
     def test_failure_without_cache_does_not_invent_position(self):
         merged = _merge_result({}, {"status": "error", "last_error": "x"})
         self.assertNotIn("latitude", merged)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -15,8 +16,10 @@ import voluptuous as vol
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
@@ -29,6 +32,7 @@ from .const import (
     CONF_COOKIE,
     CONF_DEVICES,
     CONF_GEOCODE_PROVIDER,
+    ADDRESS_KEEP_RADIUS,
     CONF_SCAN_INTERVAL,
     DOMAIN,
     LOCATE_RETRIES,
@@ -43,6 +47,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.SENSOR,
+    Platform.BINARY_SENSOR,
     Platform.DEVICE_TRACKER,
 ]
 
@@ -50,7 +55,7 @@ SERVICE_SCHEMA = vol.Schema({})
 
 # The portal pings heartbeatCheck while a browser tab is open; doing the same
 # keeps the server-side session alive and rotates CSRFToken.
-HEARTBEAT_INTERVAL = timedelta(minutes=10)
+HEARTBEAT_INTERVAL = timedelta(minutes=5)
 
 
 def signal_update(entry_id: str, device_id: str) -> str:
@@ -117,6 +122,28 @@ def _notify_reauth(hass: HomeAssistant, runtime: HuaweiFindRuntime, reason: str)
     runtime.entry.async_start_reauth(hass)
 
 
+@callback
+def enabled_device_ids(hass: HomeAssistant, runtime: HuaweiFindRuntime) -> list[str]:
+    """Return device ids the user has NOT disabled in the UI."""
+    device_reg = dr.async_get(hass)
+    entity_reg = er.async_get(hass)
+    active: list[str] = []
+    for device_id in runtime.devices:
+        device = device_reg.async_get_device(identifiers={(DOMAIN, device_id)})
+        if device is None:
+            active.append(device_id)
+            continue
+        if device.disabled_by is not None:
+            continue
+        entries = er.async_entries_for_device(
+            entity_reg, device.id, include_disabled_entities=True
+        )
+        if entries and all(entry.disabled_by is not None for entry in entries):
+            continue
+        active.append(device_id)
+    return active
+
+
 async def _async_locate_with_retry(
     runtime: HuaweiFindRuntime, device: dict[str, Any]
 ) -> dict[str, Any]:
@@ -134,12 +161,46 @@ async def _async_locate_with_retry(
     raise last_error  # type: ignore[misc]
 
 
+def _distance_m(
+    lat1: float, lon1: float, lat2: float, lon2: float
+) -> float:
+    """Great-circle distance in meters."""
+    radius = 6371000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = phi2 - phi1
+    dlambda = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dphi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    )
+    return 2 * radius * math.asin(math.sqrt(a))
+
+
 def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     """Keep the last known position when a refresh fails."""
     merged = dict(result)
     merged["last_attempt"] = dt_util.utcnow()
     if result.get("status") == "ok":
         merged["stale"] = False
+        # Reverse geocoding can fail transiently; keep the previous address
+        # as long as the device has not moved significantly.
+        if (
+            not merged.get("address")
+            and previous.get("address")
+            and previous.get("latitude") is not None
+            and previous.get("longitude") is not None
+        ):
+            moved = _distance_m(
+                previous["latitude"],
+                previous["longitude"],
+                merged["latitude"],
+                merged["longitude"],
+            )
+            if moved <= ADDRESS_KEEP_RADIUS:
+                merged["address"] = previous["address"]
+                merged["address_stale"] = True
+                return merged
+        merged["address_stale"] = False
         return merged
 
     if previous.get("latitude") is not None and previous.get("longitude") is not None:
@@ -239,7 +300,7 @@ async def async_handle_refresh_service(hass: HomeAssistant, call: ServiceCall) -
     tasks = [
         async_refresh_device(hass, runtime, device_id)
         for runtime in list(hass.data.get(DOMAIN, {}).values())
-        for device_id in list(runtime.devices)
+        for device_id in enabled_device_ids(hass, runtime)
     ]
     if tasks:
         await asyncio.gather(*tasks)
@@ -251,7 +312,7 @@ async def _async_auto_refresh(hass: HomeAssistant, runtime: HuaweiFindRuntime) -
         return
     tasks = [
         async_refresh_device(hass, runtime, device_id)
-        for device_id in list(runtime.devices)
+        for device_id in enabled_device_ids(hass, runtime)
     ]
     if tasks:
         await asyncio.gather(*tasks)

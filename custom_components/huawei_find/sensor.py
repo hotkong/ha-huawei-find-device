@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory, PERCENTAGE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
@@ -15,8 +16,6 @@ from . import HuaweiFindRuntime, signal_update
 from .const import (
     ATTR_ACCURACY,
     ATTR_ADDRESS,
-    ATTR_BATTERY,
-    ATTR_CHARGING,
     ATTR_COORD_SYS,
     ATTR_DEVICE_ID,
     ATTR_DEVICE_TIME,
@@ -35,9 +34,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     runtime: HuaweiFindRuntime = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        HuaweiLocationSensor(runtime, device) for device in runtime.devices.values()
-    )
+    entities: list[SensorEntity] = []
+    for device in runtime.devices.values():
+        entities.append(HuaweiLocationSensor(runtime, device))
+        entities.append(HuaweiBatterySensor(runtime, device))
+        entities.append(HuaweiPositionStatusSensor(runtime, device))
+    async_add_entities(entities)
 
 
 class HuaweiLocationSensor(SensorEntity):
@@ -109,15 +111,12 @@ class HuaweiLocationSensor(SensorEntity):
                     ATTR_LATITUDE: result.get("latitude"),
                     ATTR_LONGITUDE: result.get("longitude"),
                     ATTR_ACCURACY: result.get("accuracy"),
-                    ATTR_BATTERY: result.get("battery"),
-                    ATTR_CHARGING: result.get("battery_charging"),
                     ATTR_SCREEN_LOCKED: result.get("screen_locked"),
                     ATTR_COORD_SYS: result.get("coordinate_system"),
                     ATTR_DEVICE_TIME: result.get("device_time"),
                     "located_at": located_at.isoformat()
                     if isinstance(located_at, datetime)
                     else located_at,
-                    "stale": result.get("stale", False),
                     "last_attempt": (
                         result["last_attempt"].isoformat()
                         if isinstance(result.get("last_attempt"), datetime)
@@ -127,6 +126,113 @@ class HuaweiLocationSensor(SensorEntity):
             )
         if result.get("address"):
             attrs[ATTR_ADDRESS] = result["address"]
+            attrs["address_stale"] = result.get("address_stale", False)
         if result.get("last_error"):
             attrs[ATTR_ERROR] = result["last_error"]
         return attrs
+
+
+class HuaweiBatterySensor(SensorEntity):
+    """Battery level reported by the Huawei Cloud locate result."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "battery"
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_value: int | None = None
+
+    def __init__(self, runtime: HuaweiFindRuntime, device: dict) -> None:
+        self._runtime = runtime
+        self._device = device
+        self._attr_unique_id = f"{DOMAIN}_{runtime.entry.entry_id}_{device['id']}_battery"
+        self._attr_native_value = self._value_from(runtime.results.get(device["id"], {}))
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._device["id"])},
+            name=self._device.get("name") or "Huawei device",
+            manufacturer="Huawei",
+            model=self._device.get("model") or None,
+        )
+
+    @staticmethod
+    def _value_from(result: dict) -> int | None:
+        value = result.get("battery")
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_update(self._runtime.entry.entry_id, self._device["id"]),
+                self._handle_update,
+            )
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        result = self._runtime.results.get(self._device["id"], {})
+        value = self._value_from(result)
+        if value is not None:
+            self._attr_native_value = value
+        self.async_write_ha_state()
+
+
+class HuaweiPositionStatusSensor(SensorEntity):
+    """Status of the last locate attempt (ok / stale / unknown)."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "position_status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["ok", "stale", "unknown"]
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:map-marker-check"
+    _attr_native_value: str | None = None
+
+    def __init__(self, runtime: HuaweiFindRuntime, device: dict) -> None:
+        self._runtime = runtime
+        self._device = device
+        self._attr_unique_id = (
+            f"{DOMAIN}_{runtime.entry.entry_id}_{device['id']}_position_status"
+        )
+        self._attr_native_value = self._value_from(
+            runtime.results.get(device["id"], {})
+        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._device["id"])},
+            name=self._device.get("name") or "Huawei device",
+            manufacturer="Huawei",
+            model=self._device.get("model") or None,
+        )
+
+    @staticmethod
+    def _value_from(result: dict) -> str:
+        if not result:
+            return "unknown"
+        return "stale" if result.get("stale") else "ok"
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_update(self._runtime.entry.entry_id, self._device["id"]),
+                self._handle_update,
+            )
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        self._attr_native_value = self._value_from(
+            self._runtime.results.get(self._device["id"], {})
+        )
+        self.async_write_ha_state()

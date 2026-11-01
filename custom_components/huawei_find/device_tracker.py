@@ -76,12 +76,10 @@ class HuaweiLocationTracker(TrackerEntity):
             "refreshing": self._device["id"] in self._runtime.refreshing,
         }
         if result.get("latitude") is not None:
-            attrs["battery"] = result.get("battery")
             attrs["coordinate_system"] = result.get("coordinate_system")
             attrs["located_at"] = (
                 located_at.isoformat() if isinstance(located_at, datetime) else located_at
             )
-            attrs["stale"] = result.get("stale", False)
             last_attempt = result.get("last_attempt")
             attrs["last_attempt"] = (
                 last_attempt.isoformat()
