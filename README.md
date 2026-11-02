@@ -52,7 +52,7 @@ the phone is asked to report its location right away.
 ### 配置
 
 1. 电脑浏览器登录 <https://cloud.huawei.com/>，打开「查找设备」并点一次定位；
-2. 按 `F12` → **Network**，过滤 `findDevice`；
+2. 按 `F12` → **Network**，过滤 `locate`；
 3. 右键任意请求 → **Copy → Copy request headers**，找到 `Cookie:` 那一行；
 4. 回到 HA：设置 → 设备与服务 → 添加集成 → **Huawei Cloud Find Device**，粘贴 Cookie；
 5. 选择要跟踪的设备，提交。
