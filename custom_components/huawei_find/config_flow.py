@@ -37,6 +37,8 @@ from .const import (
     CONF_SCAN_INTERVAL,
     DOMAIN,
     GEOCODE_AMAP,
+    GEOCODE_AUTO,
+    GEOCODE_HUAWEI,
     GEOCODE_NONE,
     GEOCODE_OSM,
 )
@@ -72,7 +74,15 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
-            client = HuaweiFindClient(cookie)
+            try:
+                client = HuaweiFindClient(cookie)
+            except HuaweiFindError:
+                errors["base"] = "invalid_auth"
+                client = None
+            if client is None:
+                return self.async_show_form(
+                    step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors
+                )
             try:
                 devices = await client.async_get_devices()
             except HuaweiFindAuthError:
@@ -148,7 +158,17 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
-            client = HuaweiFindClient(cookie)
+            try:
+                client = HuaweiFindClient(cookie)
+            except HuaweiFindError:
+                errors["base"] = "invalid_auth"
+                client = None
+            if client is None:
+                return self.async_show_form(
+                    step_id="reauth_confirm",
+                    data_schema=STEP_USER_SCHEMA,
+                    errors=errors,
+                )
             try:
                 devices = await client.async_get_devices()
             except HuaweiFindAuthError:
@@ -193,9 +213,8 @@ class HuaweiFindOptionsFlow(OptionsFlow):
                 ),
                 CONF_SCAN_INTERVAL: int(user_input.get(CONF_SCAN_INTERVAL) or 0),
             }
-            key = (user_input.get(CONF_AMAP_KEY) or "").strip()
-            if key:
-                options[CONF_AMAP_KEY] = key
+            # Write the key (even when cleared) so removing it actually takes effect
+            options[CONF_AMAP_KEY] = (user_input.get(CONF_AMAP_KEY) or "").strip()
             self.hass.config_entries.async_update_entry(entry, options=options)
             self.hass.async_create_task(
                 self.hass.config_entries.async_reload(entry.entry_id)
@@ -209,10 +228,18 @@ class HuaweiFindOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_GEOCODE_PROVIDER,
-                        default=current.get(CONF_GEOCODE_PROVIDER, GEOCODE_NONE),
+                        default=current.get(CONF_GEOCODE_PROVIDER, GEOCODE_AUTO),
                     ): SelectSelector(
                         SelectSelectorConfig(
                             options=[
+                                SelectOptionDict(
+                                    value=GEOCODE_AUTO,
+                                    label="Auto (Huawei -> AMap -> OSM)",
+                                ),
+                                SelectOptionDict(
+                                    value=GEOCODE_HUAWEI,
+                                    label="Huawei Map (built-in, no key)",
+                                ),
                                 SelectOptionDict(
                                     value=GEOCODE_NONE,
                                     label="No address lookup (coordinates only)",

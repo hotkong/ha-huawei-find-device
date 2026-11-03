@@ -140,6 +140,18 @@ class MergeResultTests(unittest.TestCase):
         self.assertNotIn("address", merged)
         self.assertFalse(merged["address_stale"])
 
+    def test_failure_keeps_address_and_marks_it_stale(self):
+        previous = {
+            "status": "ok",
+            "latitude": 31.4,
+            "longitude": 120.4,
+            "address": "Somewhere",
+        }
+        merged = _merge_result(previous, {"status": "error", "last_error": "boom"})
+        self.assertEqual(merged["address"], "Somewhere")
+        self.assertTrue(merged["address_stale"])
+        self.assertTrue(merged["stale"])
+
     def test_failure_without_cache_does_not_invent_position(self):
         merged = _merge_result({}, {"status": "error", "last_error": "x"})
         self.assertNotIn("latitude", merged)

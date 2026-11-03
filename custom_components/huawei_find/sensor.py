@@ -14,6 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import HuaweiFindRuntime, signal_update
 from .const import (
+    GEOCODE_NONE,
     ATTR_ACCURACY,
     ATTR_ADDRESS,
     ATTR_COORD_SYS,
@@ -78,15 +79,26 @@ class HuaweiLocationSensor(SensorEntity):
         )
 
     def _format_state(self, result: dict) -> str | None:
-        """Address first, coordinates as fallback."""
+        """Address first; coordinates only when no provider is configured."""
         address = result.get("address")
         if address:
             return str(address)[:250]
+
         latitude = result.get("latitude")
         longitude = result.get("longitude")
         if latitude is None or longitude is None:
             return None
+
+        if self._runtime.geocode_provider != GEOCODE_NONE:
+            return self._address_unavailable_text()
         return f"{latitude:.6f}, {longitude:.6f}"
+
+    def _address_unavailable_text(self) -> str:
+        hass = getattr(self, "hass", None)
+        language = ""
+        if hass is not None:
+            language = (hass.config.language or "").lower()
+        return "\u5730\u5740\u89e3\u6790\u5931\u8d25" if language.startswith("zh") else "Address unavailable"
 
     @callback
     def _handle_update(self) -> None:
@@ -219,7 +231,9 @@ class HuaweiPositionStatusSensor(SensorEntity):
     def _value_from(result: dict) -> str:
         if not result:
             return "unknown"
-        return "stale" if result.get("stale") else "ok"
+        if result.get("status") != "ok" or result.get("stale"):
+            return "stale"
+        return "ok"
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(

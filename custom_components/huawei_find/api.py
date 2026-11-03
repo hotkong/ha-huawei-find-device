@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import math
+import random
 import time
 from datetime import datetime, timezone
 from collections.abc import Callable
@@ -47,15 +48,18 @@ class HuaweiFindAuthError(HuaweiFindError):
     """The session is no longer valid; a new cookie is required."""
 
 
+class HuaweiFindDeviceError(HuaweiFindError):
+    """Device-level failure (offline, inactive); retrying is pointless."""
+
+
 # ---------------------------------------------------------------------------
 # Cookie / request helpers
 # ---------------------------------------------------------------------------
 
 
-def trace_id() -> str:
-    """Random trace id expected by the API (format is not strict)."""
-    now = time.time()
-    return f"{int(now)}_{int(now * 1000) % 1000000}"
+def trace_id(module: str = "01100") -> str:
+    """Trace id in the format the web portal uses."""
+    return f"{module}_02_{int(time.time())}_{random.randint(0, 99999999):08d}"
 
 
 def parse_cookie(raw: str) -> dict[str, str]:
@@ -277,6 +281,8 @@ class HuaweiFindClient:
             "Referer": f"{BASE_URL}/webFindPhone.html",
             "User-Agent": USER_AGENT,
             "x-hw-framework-type": "web",
+            "x-hw-need-location": "1",
+            "x-hw-trace-id": trace_id(),
         }
         if payload is not None:
             headers["Content-Type"] = "application/json;charset=UTF-8"
@@ -304,6 +310,11 @@ class HuaweiFindClient:
         if status in (401, 403):
             raise HuaweiFindAuthError(
                 f"Huawei Cloud returned HTTP {status}; the session may have expired"
+            )
+        if status in (408, 425, 429) or status >= 500:
+            # Gateway/CDN/rate-limit errors are transient, not an expired session
+            raise HuaweiFindError(
+                f"Huawei Cloud returned HTTP {status}; temporary outage"
             )
         if not text.lstrip().startswith("{"):
             raise HuaweiFindAuthError(
@@ -347,7 +358,14 @@ class HuaweiFindClient:
             name, _, rest = raw.partition("=")
             name = name.strip()
             value = rest.split(";", 1)[0].strip()
-            if not name or not value:
+            if not name:
+                continue
+            if not value:
+                # Deletion: Set-Cookie: name=; Max-Age=0 / Expires in the past
+                lowered = rest.lower()
+                if ("max-age=0" in lowered or "1970" in lowered) and name in self._cookies:
+                    del self._cookies[name]
+                    changed = True
                 continue
             if self._cookies.get(name) != value:
                 self._cookies[name] = value
@@ -386,7 +404,20 @@ class HuaweiFindClient:
 
     async def async_get_devices(self) -> list[dict[str, Any]]:
         """Return own and shared family devices (deduplicated)."""
-        data = await self._post(EP_DEVICE_LIST, {"deviceType": 0})
+        data = await self._post(
+            EP_DEVICE_LIST,
+            {
+                "traceId": trace_id(),
+                "tabLocation": 2,
+                "portalType": 0,
+                "deviceType": 0,
+            },
+        )
+        if data["_code"] != 0:
+            # Fall back to the minimal body that older builds accepted
+            fallback = await self._post(EP_DEVICE_LIST, {"deviceType": 0})
+            if fallback["_code"] == 0:
+                data = fallback
         if data["_code"] == 990:
             raise HuaweiFindAuthError(str(data.get("info") or "authentication failed (code 990)"))
         if data["_code"] != 0:
@@ -485,7 +516,9 @@ class HuaweiFindClient:
         if code == "990":
             if not await self._session_is_valid():
                 raise HuaweiFindAuthError(info)
-            raise HuaweiFindError(f"Device is not locatable right now (possibly offline): {info}")
+            raise HuaweiFindDeviceError(
+                f"Device is not locatable right now (possibly offline): {info}"
+            )
         raise HuaweiFindError(f"Locate command failed: {info}")
 
     async def async_query(self, device: dict[str, Any], sequence: int = 0) -> dict[str, Any]:

@@ -25,14 +25,14 @@ the phone is asked to report its location right away.
 ### 功能
 
 - 一个「全部刷新」按钮 + 每台设备一个「刷新定位」按钮（自有设备 + 家人共享设备）；
-- 定位传感器：状态显示地址（未配置地址反查时显示 `纬度, 经度`）；
+- 定位传感器：状态显示地址；**配置了地址源后不会再显示经纬度**，反查失败时显示「地址解析失败」（坐标仍保留在属性里）；
 - 电量、充电状态、上次定位状态各自独立成实体，便于做自动化；
 - 每台设备一个 `device_tracker`（GPS 源），可绑定到 `person`，在原生地图显示；
 - `huawei_find.refresh` 服务，方便脚本/自动化调用；
 - 结果落盘：HA 重启后保留上次位置；**单次定位失败不会清空坐标**，而是沿用上次结果并标记 `stale`；
 - Cookie 轮换自动回存 + 每 5 分钟 `heartbeatCheck` 保活（与网页版同机制）+ 失效时弹通知引导重新授权；
 - 可选自动刷新间隔（分钟，0 = 关闭）；
-- 可选地址反查：高德 Web 服务 或 OpenStreetMap；
+- 可选地址反查：`Auto`（默认，华为 → 高德 → OSM 依次降级）、华为地图（内置 Key，与网页版一致）、高德、OpenStreetMap；
 - 自动跳过在界面上**已禁用**的设备，不再无谓唤醒它们。
 
 ### 安装
@@ -67,7 +67,7 @@ the phone is asked to report its location right away.
 |---|---|
 | `button.<entry>_refresh_all` | 刷新全部定位（跳过已禁用设备） |
 | `button.<device>_refresh` | 单台设备刷新定位 |
-| `sensor.<device>_last_location` | 状态 = 地址；无地址时 `纬度, 经度` |
+| `sensor.<device>_last_location` | 状态 = 地址；未配置地址源时才是 `纬度, 经度` |
 | `sensor.<device>_battery` | 电量（`device_class: battery`，诊断类） |
 | `binary_sensor.<device>_charging` | 充电状态（诊断类） |
 | `sensor.<device>_last_locate_status` | 上次定位状态（枚举：成功 / 失败 / 未知，诊断类） |
@@ -82,7 +82,7 @@ the phone is asked to report its location right away.
 
 | 选项 | 说明 |
 |---|---|
-| 地址来源 | `AMap / Gaode`（需 [高德开放平台](https://lbs.amap.com/) Web 服务 Key，国内最准）/ `OpenStreetMap`（免 Key）/ 不查地址 |
+| 地址来源 | `Auto`（默认，按 华为 → 高德 → OSM 依次降级）/ `Huawei Map`（内置 Key，免申请）/ `AMap / Gaode`（需 [高德开放平台](https://lbs.amap.com/) Key）/ `OpenStreetMap`（免 Key）/ 不查地址 |
 | 高德 Key | 仅选择高德时需要 |
 | 自动刷新间隔 | 分钟，`0` = 关闭（默认）；最大 720 |
 
@@ -134,7 +134,7 @@ GET  /heartbeatCheck?checkType=1       # 每 5 分钟，保持会话并轮换 CS
 
 ### 已知限制
 
-- Cookie 有有效期，没有 OAuth 续期；心跳保活能显著延长，但改密码、异地登录、风控仍会使其失效，届时需重新粘贴；
+- Cookie 会过期（实测数小时到两天不等，与查询频率有关；没有 OAuth 续期），失效后需重新粘贴，集成会弹通知；
 - 手表/手环常年离线，返回 `device inactive` 属正常；
 - 接口返回的坐标可能是云端缓存，无法区分「刚上报」与「上次缓存」；
 - 地址反查依赖第三方服务，偶发超时会沿用上次地址（`address_stale: true`）。
@@ -142,10 +142,12 @@ GET  /heartbeatCheck?checkType=1       # 每 5 分钟，保持会话并轮换 CS
 ### Roadmap
 
 - [x] 按钮触发 / 定位传感器 / GPS 追踪器
-- [x] 地址反查（高德、OSM）
+- [x] 地址反查（Auto：华为 → 高德 → OSM）
 - [x] 自动刷新间隔
 - [x] 失败保留最后坐标、跳过禁用设备
 - [x] 心跳保活、Cookie 轮换回存
+- [x] 设备级失败不重试（手表/手环）
+- [x] 卸载时取消在途刷新、保存串行化
 - [x] 单元测试（`python -m unittest discover -s tests`）
 - [ ] 自动刷新的时间窗（`start_hour` / `end_hour`）
 - [ ] 设备列表热更新（不重载集成）

@@ -22,11 +22,12 @@ DEVICE = {
 class FakeRuntime(HuaweiFindRuntime):
     """Minimal object exposing what the entity constructors touch."""
 
-    def __init__(self, results=None):
+    def __init__(self, results=None, geocode_provider="none"):
         self.entry = SimpleNamespace(entry_id="01TEST", data={}, options={})
         self.results = results or {}
         self.refreshing = set()
         self.devices = {DEVICE["id"]: DEVICE}
+        self.geocode_provider = geocode_provider
 
 
 RESULT = {
@@ -55,6 +56,23 @@ class EntityConstructionTests(unittest.TestCase):
         entity = HuaweiLocationSensor(FakeRuntime({DEVICE["id"]: result}), DEVICE)
         self.assertIn("31.420000", entity.native_value)
 
+    def test_location_sensor_hides_coords_when_provider_configured(self):
+        result = dict(RESULT)
+        result.pop("address")
+        entity = HuaweiLocationSensor(
+            FakeRuntime({DEVICE["id"]: result}, "huawei"), DEVICE
+        )
+        self.assertEqual(entity.native_value, "Address unavailable")
+        self.assertNotIn("31.42", entity.native_value)
+        # coordinates stay available as attributes
+        self.assertEqual(entity.extra_state_attributes["latitude"], 31.42)
+
+    def test_location_sensor_keeps_address_with_provider(self):
+        entity = HuaweiLocationSensor(
+            FakeRuntime({DEVICE["id"]: RESULT}, "huawei"), DEVICE
+        )
+        self.assertEqual(entity.native_value, "Somewhere")
+
     def test_battery_sensor(self):
         entity = HuaweiBatterySensor(FakeRuntime({DEVICE["id"]: RESULT}), DEVICE)
         self.assertEqual(entity.native_value, 76)
@@ -76,6 +94,11 @@ class EntityConstructionTests(unittest.TestCase):
     def test_position_status_unknown(self):
         entity = HuaweiPositionStatusSensor(FakeRuntime({}), DEVICE)
         self.assertEqual(entity.native_value, "unknown")
+
+    def test_position_status_failed_without_coords(self):
+        result = {"status": "error", "last_error": "boom", "stale": False}
+        entity = HuaweiPositionStatusSensor(FakeRuntime({DEVICE["id"]: result}), DEVICE)
+        self.assertEqual(entity.native_value, "stale")
 
     def test_empty_results(self):
         runtime = FakeRuntime({})

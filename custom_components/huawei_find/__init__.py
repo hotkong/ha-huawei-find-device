@@ -25,7 +25,12 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .api import HuaweiFindAuthError, HuaweiFindClient, HuaweiFindError
+from .api import (
+    HuaweiFindAuthError,
+    HuaweiFindClient,
+    HuaweiFindDeviceError,
+    HuaweiFindError,
+)
 from .geocode import async_reverse_geocode
 from .const import (
     CONF_AMAP_KEY,
@@ -38,6 +43,8 @@ from .const import (
     LOCATE_RETRIES,
     LOCATE_RETRY_DELAY,
     MAX_CONCURRENT_LOCATES,
+    GEOCODE_AUTO,
+    GEOCODE_HUAWEI,
     GEOCODE_NONE,
     SERVICE_REFRESH,
 )
@@ -80,8 +87,11 @@ class HuaweiFindRuntime:
     store: Store | None = None
     geocode_provider: str = GEOCODE_NONE
     amap_key: str = ""
+    save_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     auto_refresh_unsub: Callable[[], None] | None = None
     reauth_requested: bool = False
+    unloading: bool = False
+    tasks: set[asyncio.Task] = field(default_factory=set)
     semaphore: asyncio.Semaphore = field(
         default_factory=lambda: asyncio.Semaphore(MAX_CONCURRENT_LOCATES)
     )
@@ -103,6 +113,15 @@ def _make_cookie_listener(
         )
 
     return listener
+
+
+def _interval_minutes(value: Any) -> int:
+    """Parse the scan_interval option defensively."""
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        _LOGGER.warning("Invalid scan_interval %r, auto refresh disabled", value)
+        return 0
 
 
 def _notify_reauth(hass: HomeAssistant, runtime: HuaweiFindRuntime, reason: str) -> None:
@@ -152,7 +171,7 @@ async def _async_locate_with_retry(
     for attempt in range(LOCATE_RETRIES + 1):
         try:
             return await runtime.client.async_locate_and_wait(device)
-        except HuaweiFindAuthError:
+        except (HuaweiFindAuthError, HuaweiFindDeviceError):
             raise
         except HuaweiFindError as err:
             last_error = err
@@ -204,6 +223,7 @@ def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str,
         return merged
 
     if previous.get("latitude") is not None and previous.get("longitude") is not None:
+        kept_address = False
         for key in (
             "latitude",
             "longitude",
@@ -218,7 +238,12 @@ def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str,
         ):
             if key in previous and key not in merged:
                 merged[key] = previous[key]
+                if key == "address":
+                    kept_address = True
         merged["stale"] = True
+        if kept_address:
+            # The address is inherited, not freshly resolved
+            merged["address_stale"] = True
         return merged
 
     merged["stale"] = False
@@ -235,62 +260,93 @@ async def async_refresh_device(
 
     lock = runtime.locks.setdefault(device_id, asyncio.Lock())
     if lock.locked():
-        _LOGGER.debug("%s is already refreshing, skipping duplicate request", device.get("name"))
+        _LOGGER.debug(
+            "%s is already refreshing, skipping duplicate request", device.get("name")
+        )
         return runtime.results.get(device_id, {})
 
-    async with lock:
-        runtime.refreshing.add(device_id)
-        async_dispatcher_send(hass, signal_update(runtime.entry.entry_id, device_id))
-        try:
-            async with runtime.semaphore:
-                result = await _async_locate_with_retry(runtime, device)
-        except HuaweiFindAuthError as err:
-            _LOGGER.warning("Huawei Cloud session expired: %s", err)
-            result = {"status": "auth_expired", "last_error": str(err)}
-            _notify_reauth(hass, runtime, str(err))
-        except HuaweiFindError as err:
-            _LOGGER.warning("Failed to refresh location for %s: %s", device.get("name"), err)
-            result = {"status": "error", "last_error": str(err)}
-        finally:
-            runtime.refreshing.discard(device_id)
-
-        result = _merge_result(runtime.results.get(device_id) or {}, result)
-
-        if result.get("status") == "ok" and runtime.geocode_provider != GEOCODE_NONE:
-            result["address"] = await async_reverse_geocode(
-                hass,
-                runtime.geocode_provider,
-                runtime.amap_key,
-                result["latitude"],
-                result["longitude"],
+    task = asyncio.current_task()
+    if task is not None:
+        runtime.tasks.add(task)
+    try:
+        async with lock:
+            runtime.refreshing.add(device_id)
+            async_dispatcher_send(
+                hass, signal_update(runtime.entry.entry_id, device_id)
             )
+            try:
+                async with runtime.semaphore:
+                    result = await _async_locate_with_retry(runtime, device)
+            except HuaweiFindAuthError as err:
+                _LOGGER.warning("Huawei Cloud session expired: %s", err)
+                result = {"status": "auth_expired", "last_error": str(err)}
+                _notify_reauth(hass, runtime, str(err))
+            except HuaweiFindDeviceError as err:
+                _LOGGER.debug("Device %s is not reachable: %s", device.get("name"), err)
+                result = {"status": "error", "last_error": str(err)}
+            except HuaweiFindError as err:
+                _LOGGER.warning(
+                    "Failed to refresh location for %s: %s", device.get("name"), err
+                )
+                result = {"status": "error", "last_error": str(err)}
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error refreshing %s", device.get("name"))
+                result = {"status": "error", "last_error": f"Unexpected error: {err}"}
+            finally:
+                runtime.refreshing.discard(device_id)
 
-        if result.get("status") == "ok":
-            runtime.reauth_requested = False
-            persistent_notification.async_dismiss(
-                hass, f"{DOMAIN}_reauth_{runtime.entry.entry_id}"
+            if result.get("status") == "ok" and runtime.geocode_provider != GEOCODE_NONE:
+                address = await async_reverse_geocode(
+                    hass,
+                    runtime.geocode_provider,
+                    runtime.amap_key,
+                    result["latitude"],
+                    result["longitude"],
+                )
+                # Only set when successful: a None must not wipe the merged address
+                if address:
+                    result["address"] = address
+
+            result = _merge_result(runtime.results.get(device_id) or {}, result)
+
+            if result.get("status") == "ok":
+                runtime.reauth_requested = False
+                persistent_notification.async_dismiss(
+                    hass, f"{DOMAIN}_reauth_{runtime.entry.entry_id}"
+                )
+
+            if runtime.unloading:
+                # Entry is being unloaded; never write through a stale runtime
+                return result
+
+            runtime.results[device_id] = result
+            await _async_save_results(runtime)
+            async_dispatcher_send(
+                hass, signal_update(runtime.entry.entry_id, device_id)
             )
-
-        runtime.results[device_id] = result
-        await _async_save_results(runtime)
-        async_dispatcher_send(hass, signal_update(runtime.entry.entry_id, device_id))
-        return result
+            return result
+    finally:
+        if task is not None:
+            runtime.tasks.discard(task)
 
 
 async def _async_save_results(runtime: HuaweiFindRuntime) -> None:
     """Persist the latest results so they survive a restart."""
     if runtime.store is None:
         return
-    payload: dict[str, Any] = {}
-    for device_id, result in runtime.results.items():
-        item = dict(result)
-        for key in ("located_at", "last_attempt"):
-            value = item.get(key)
-            if hasattr(value, "isoformat"):
-                item[key] = value.isoformat()
-        payload[device_id] = item
     try:
-        await runtime.store.async_save(payload)
+        # Build the snapshot inside the lock so a queued save cannot write
+        # an older view over a newer one.
+        async with runtime.save_lock:
+            payload: dict[str, Any] = {}
+            for device_id, result in runtime.results.items():
+                item = dict(result)
+                for key in ("located_at", "last_attempt"):
+                    value = item.get(key)
+                    if hasattr(value, "isoformat"):
+                        item[key] = value.isoformat()
+                payload[device_id] = item
+            await runtime.store.async_save(payload)
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Failed to save location results")
 
@@ -379,7 +435,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         devices=devices,
         results=results,
         store=store,
-        geocode_provider=options.get(CONF_GEOCODE_PROVIDER, GEOCODE_NONE),
+        geocode_provider=options.get(CONF_GEOCODE_PROVIDER, GEOCODE_AUTO),
         amap_key=options.get(CONF_AMAP_KEY, ""),
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
@@ -401,7 +457,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, _heartbeat, HEARTBEAT_INTERVAL
     )
 
-    interval = int(options.get(CONF_SCAN_INTERVAL) or 0)
+    interval = _interval_minutes(options.get(CONF_SCAN_INTERVAL))
     if interval > 0:
         async def _auto(_now) -> None:
             await _async_auto_refresh(hass, runtime)
@@ -425,9 +481,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         runtime: HuaweiFindRuntime | None = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
         if runtime is not None:
+            runtime.unloading = True
             if runtime.unsub_heartbeat is not None:
                 runtime.unsub_heartbeat()
             if runtime.auto_refresh_unsub is not None:
                 runtime.auto_refresh_unsub()
+            pending = [task for task in runtime.tasks if not task.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
             await runtime.client.async_close()
     return unloaded

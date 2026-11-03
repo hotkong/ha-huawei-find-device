@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 
 import aiohttp
@@ -24,8 +25,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     GEOCODE_AMAP,
+    GEOCODE_AUTO,
     GEOCODE_CACHE_TTL,
+    GEOCODE_HUAWEI,
     GEOCODE_OSM,
+    HUAWEI_GEOCODE_KEY,
+    HUAWEI_GEOCODE_URL,
     OSM_MIN_INTERVAL,
 )
 
@@ -51,7 +56,12 @@ async def async_reverse_geocode(
     """Return a readable address, or None on failure (never blocks locating)."""
     if provider == GEOCODE_AMAP and not api_key:
         return None
-    if provider not in (GEOCODE_AMAP, GEOCODE_OSM):
+    if provider not in (
+        GEOCODE_AMAP,
+        GEOCODE_AUTO,
+        GEOCODE_HUAWEI,
+        GEOCODE_OSM,
+    ):
         return None
 
     # ~110 m precision is enough for an address and dramatically reduces calls
@@ -60,21 +70,57 @@ async def async_reverse_geocode(
     if cached is not None and time.monotonic() - cached[1] < GEOCODE_CACHE_TTL:
         return cached[0]
 
-    address = None
-    for attempt in range(2):
-        if provider == GEOCODE_AMAP:
+    # AUTO walks the chain once per provider; explicit providers retry once.
+    attempts = 1 if provider == GEOCODE_AUTO else 2
+    for candidate in _provider_chain(provider, api_key):
+        address = await _query_with_retry(
+            hass, candidate, api_key, latitude, longitude, attempts
+        )
+        if address:
+            _prune_cache()
+            _CACHE[cache_key] = (address, time.monotonic())
+            return address
+    return None
+
+
+def _provider_chain(provider: str, api_key: str) -> list[str]:
+    """Providers to try, in priority order."""
+    if provider != GEOCODE_AUTO:
+        return [provider]
+    chain = [GEOCODE_HUAWEI]
+    if api_key:
+        chain.append(GEOCODE_AMAP)
+    chain.append(GEOCODE_OSM)
+    return chain
+
+
+async def _query_with_retry(
+    hass: HomeAssistant,
+    provider: str,
+    api_key: str,
+    latitude: float,
+    longitude: float,
+    attempts: int,
+) -> str | None:
+    for attempt in range(attempts):
+        if provider == GEOCODE_HUAWEI:
+            address = await _huawei(hass, latitude, longitude)
+        elif provider == GEOCODE_AMAP:
             address = await _amap(hass, api_key, latitude, longitude)
         else:
             address = await _osm(hass, latitude, longitude)
         if address:
-            break
-        if attempt == 0:
+            return address
+        if attempt < attempts - 1:
             await asyncio.sleep(1.5)
+    return None
 
-    if address:
-        _prune_cache()
-        _CACHE[cache_key] = (address, time.monotonic())
-    return address
+
+def _trim_cache() -> None:
+    """Drop the oldest entries once the cache exceeds its bound."""
+    while len(_CACHE) > _CACHE_MAX_ENTRIES:
+        oldest = min(_CACHE, key=lambda key: _CACHE[key][1])
+        _CACHE.pop(oldest, None)
 
 
 def _prune_cache() -> None:
@@ -125,7 +171,7 @@ async def _osm(hass: HomeAssistant, latitude: float, longitude: float) -> str | 
         "zoom": 18,
         "accept-language": "zh-CN,zh,en",
     }
-    headers = {"User-Agent": "HomeAssistant-huawei_find/0.5.1"}
+    headers = {"User-Agent": "HomeAssistant-huawei_find/0.5.2"}
 
     async with _OSM_LOCK:
         wait = OSM_MIN_INTERVAL - (time.monotonic() - _osm_last_request)
@@ -145,3 +191,34 @@ async def _osm(hass: HomeAssistant, latitude: float, longitude: float) -> str | 
         _LOGGER.debug("OSM reverse geocode error: %s", data["error"])
         return None
     return data.get("display_name") or None
+
+
+async def _huawei(
+    hass: HomeAssistant, latitude: float, longitude: float
+) -> str | None:
+    """Reverse geocode with Huawei's own map service (used by the portal)."""
+    session = async_get_clientsession(hass)
+    payload = {
+        "location": {"latitude": latitude, "longitude": longitude},
+        "language": "zh-CN",
+        "isExtension": True,
+        "isExtendedAoi": True,
+        "sortBy": 0,
+        "requestId": f"01100_02_{int(time.time())}_{random.randint(0, 99999999):08d}",
+    }
+    try:
+        async with session.post(
+            HUAWEI_GEOCODE_URL,
+            params={"key": HUAWEI_GEOCODE_KEY},
+            json=payload,
+            timeout=_TIMEOUT,
+        ) as response:
+            data = await response.json(content_type=None)
+    except (aiohttp.ClientError, TimeoutError) as err:
+        _LOGGER.debug("Huawei reverse geocode request failed: %s", err)
+        return None
+
+    if str(data.get("returnCode")) != "0":
+        _LOGGER.debug("Huawei reverse geocode error: %s", data.get("returnCode"))
+        return None
+    return data.get("addressDescription") or None

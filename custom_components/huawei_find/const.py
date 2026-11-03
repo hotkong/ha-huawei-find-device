@@ -19,6 +19,17 @@ CONF_AMAP_KEY = "amap_key"
 GEOCODE_NONE = "none"
 GEOCODE_AMAP = "amap"
 GEOCODE_OSM = "osm"
+GEOCODE_HUAWEI = "huawei"
+GEOCODE_AUTO = "auto"
+
+# Huawei\u0027s own map service (embedded key from the web portal, no login needed)
+HUAWEI_GEOCODE_URL = (
+    "https://siteapi.cloud.huawei.com.cn/mapApi/v3/siteService/reverseGeocode"
+)
+HUAWEI_GEOCODE_KEY = (
+    "CV8QPlgNpxJ1tuEj/bQ3GC+pfiOJF2tqOznakta22VByGNFk"
+    "IGrLRWOkAMgf3WlKuEVEGm9FPD1LjFCMB5ce6gz4/aIm"
+)
 
 SERVICE_REFRESH = "refresh"
 
