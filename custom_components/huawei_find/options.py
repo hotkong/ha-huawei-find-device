@@ -62,11 +62,11 @@ def _check_expiry_reminder(
     persistent_notification.async_create(
         hass,
         f"The Huawei Cloud cookie has been in use for {days:.0f} days. "
-        "The observed session lifetime is around a week, so update it now "
-        "to avoid a gap in location updates.\n\n"
+        "Session lifetime is not fixed, so if location updates stop working, "
+        "update the cookie to restore them.\n\n"
         "Settings > Devices & Services > Huawei Cloud Find Device > "
         "Re-authenticate, or call huawei_find.set_cookie.",
-        title="Huawei Cloud Find Device: cookie is getting old",
+        title="Huawei Cloud Find Device: consider refreshing the cookie",
         notification_id=notification_id,
     )
 
