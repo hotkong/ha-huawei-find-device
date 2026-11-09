@@ -4,7 +4,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from custom_components.huawei_find import _async_locate_with_retry, _interval_minutes
+from custom_components.huawei_find.coordinator import _async_locate_with_retry
+from custom_components.huawei_find.helpers import _interval_minutes
 from custom_components.huawei_find.api import (
     HuaweiFindAuthError,
     HuaweiFindDeviceError,
@@ -34,7 +35,7 @@ class RetryPolicyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transient_error_is_retried_once(self):
         runtime = _runtime(HuaweiFindError("timeout"))
-        with patch("custom_components.huawei_find.LOCATE_RETRY_DELAY", 0):
+        with patch("custom_components.huawei_find.coordinator.LOCATE_RETRY_DELAY", 0):
             with self.assertRaises(HuaweiFindError):
                 await _async_locate_with_retry(runtime, {})
         self.assertEqual(runtime.client.async_locate_and_wait.await_count, 2)

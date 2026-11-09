@@ -1,1 +1,14 @@
 refresh:
+set_cookie:
+  fields:
+    cookie:
+      example: "CSRFToken=...; USER_ID=..."
+      required: true
+      selector:
+        text:
+          multiline: true
+    entry_id:
+      example: "01M68GNRAS24MZPDJ9H0SWHGFB"
+      required: false
+      selector:
+        text:

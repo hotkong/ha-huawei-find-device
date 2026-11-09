@@ -54,6 +54,9 @@
       },
       "refresh": {
         "name": "Refresh location"
+      },
+      "ring": {
+        "name": "Ring device"
       }
     },
     "sensor": {
@@ -83,6 +86,16 @@
       "name": "Refresh location",
       "description": "Ask Huawei Cloud to locate every device on the account.",
       "fields": {}
+    },
+    "set_cookie": {
+      "name": "Set cookie",
+      "description": "Update the Huawei Cloud session cookie without the UI.",
+      "fields": {
+        "cookie": {
+          "name": "Cookie",
+          "description": "Full cookie header value"
+        }
+      }
     }
   }
 }

@@ -26,6 +26,8 @@ from typing import Any
 import aiohttp
 
 from .const import (
+    EP_BELL,
+    HW_MODEL,
     BASE_URL,
     EP_DEVICE_LIST,
     EP_LOCATE,
@@ -254,6 +256,18 @@ class HuaweiFindClient:
         self.user_id = _cookie_value(self._cookies, ("USER_ID", "userId", "uid"))
         self._session: aiohttp.ClientSession | None = None
 
+    def set_cookie(self, cookie: str) -> None:
+        """Replace the session cookies (used by huawei_find.set_cookie)."""
+        cookies = parse_cookie(cookie)
+        if not cookies:
+            raise HuaweiFindError("Cookie is empty")
+        self._cookies = cookies
+        self.csrf_token = _cookie_value(
+            self._cookies,
+            ("CSRFToken", "hicloud_csrf", "csrfToken", "XSRF-TOKEN", "_csrf"),
+        )
+        self.user_id = _cookie_value(self._cookies, ("USER_ID", "userId", "uid"))
+
     async def async_close(self) -> None:
         if self._session is not None and not self._session.closed:
             await self._session.close()
@@ -273,6 +287,7 @@ class HuaweiFindClient:
         path: str,
         payload: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         headers = {
             "Accept": "application/json, text/plain, */*",
@@ -290,6 +305,8 @@ class HuaweiFindClient:
             headers["CSRFToken"] = self.csrf_token
         if self.user_id:
             headers["userId"] = self.user_id
+        if extra_headers:
+            headers.update(extra_headers)
 
         session = await self._ensure_session()
         try:
@@ -437,6 +454,7 @@ class HuaweiFindClient:
                     or "Huawei device",
                     "model": raw.get("model") or raw.get("deviceTypeName") or "",
                     "device_type": raw.get("deviceType") or 9,
+                    "per_device_type": str(raw.get("perDeviceType") or ""),
                     "is_shared": False,
                     "sender_user_id": "",
                 }
@@ -492,6 +510,19 @@ class HuaweiFindClient:
             payload["relationType"] = 2
         return payload
 
+    def _bell_payload(self, device: dict[str, Any]) -> dict[str, Any]:
+        payload = {
+            "traceId": trace_id(),
+            "deviceId": device["id"],
+            "deviceType": device.get("device_type") or 9,
+            "perDeviceType": "0",
+            "cptList": "",
+        }
+        if device.get("is_shared"):
+            payload["senderUserId"] = device["sender_user_id"]
+            payload["relationType"] = 2
+        return payload
+
     def _query_payload(self, device: dict[str, Any], sequence: int) -> dict[str, Any]:
         payload = {
             "traceId": trace_id(),
@@ -520,6 +551,27 @@ class HuaweiFindClient:
                 f"Device is not locatable right now (possibly offline): {info}"
             )
         raise HuaweiFindError(f"Locate command failed: {info}")
+
+    async def async_ring(self, device: dict[str, Any]) -> bool:
+        """Make the device play its alarm sound."""
+        data = await self._request(
+            "POST",
+            EP_BELL,
+            payload=self._bell_payload(device),
+            extra_headers={
+                "x-hw-framework-type": "0",
+                "x-hw-model": HW_MODEL,
+            },
+        )
+        code = data["_code"]
+        if code == 0:
+            return True
+        info = str(data.get("info") or f"code={code}")
+        if code == 990:
+            if not await self._session_is_valid():
+                raise HuaweiFindAuthError(info)
+            raise HuaweiFindDeviceError(f"Device cannot ring right now: {info}")
+        raise HuaweiFindError(f"Ring failed: {info}")
 
     async def async_query(self, device: dict[str, Any], sequence: int = 0) -> dict[str, Any]:
         return await self._post(EP_QUERY, self._query_payload(device, sequence))

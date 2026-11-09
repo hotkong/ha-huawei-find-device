@@ -3,7 +3,7 @@
 import unittest
 from unittest.mock import MagicMock
 
-from custom_components.huawei_find.api import HuaweiFindClient
+from custom_components.huawei_find.api import HuaweiFindClient, HuaweiFindError
 
 
 class FakeResponse:
@@ -24,6 +24,18 @@ class CookieAbsorbTests(unittest.TestCase):
         client._absorb_set_cookie(FakeResponse(["A=; Max-Age=0; Path=/"]))
         self.assertNotIn("A", client._cookies)
         self.assertEqual(client._cookies["B"], "2")
+
+    def test_set_cookie_replaces_session(self):
+        client = HuaweiFindClient("A=1")
+        client.set_cookie("CSRFToken=csrf; userId=42")
+        self.assertEqual(client.csrf_token, "csrf")
+        self.assertEqual(client.user_id, "42")
+        self.assertIn("CSRFToken", client._cookies)
+
+    def test_set_cookie_rejects_empty(self):
+        client = HuaweiFindClient("A=1")
+        with self.assertRaises(HuaweiFindError):
+            client.set_cookie("   ")
 
     def test_empty_value_without_deletion_keeps_cookie(self):
         client = HuaweiFindClient("A=1")

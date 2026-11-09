@@ -8,6 +8,7 @@ EP_SHARE_GRANTS = "/findDevice/getShareGrantInfo"
 EP_LOCATE = "/findDevice/locate"
 EP_QUERY = "/findDevice/queryLocateResult"
 EP_HEARTBEAT = "/heartbeatCheck"
+EP_BELL = "/findDevice/portalBellReq"
 
 CONF_COOKIE = "cookie"
 CONF_DEVICES = "devices"
@@ -32,6 +33,14 @@ HUAWEI_GEOCODE_KEY = (
 )
 
 SERVICE_REFRESH = "refresh"
+SERVICE_SET_COOKIE = "set_cookie"
+
+# Ring (find my phone) parameters
+RING_COOLDOWN = 30  # seconds between rings for the same device
+HW_MODEL = "noh-an00"  # x-hw-model header the portal sends
+
+# Warn the user before the observed ~7 day session lifetime runs out
+EXPIRY_WARNING_DAYS = 6
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_LATITUDE = "latitude"

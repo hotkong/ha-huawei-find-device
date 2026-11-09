@@ -4,49 +4,64 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
-from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import partial
 from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .api import (
-    HuaweiFindAuthError,
-    HuaweiFindClient,
-    HuaweiFindDeviceError,
-    HuaweiFindError,
-)
-from .geocode import async_reverse_geocode
+from .api import HuaweiFindAuthError, HuaweiFindClient, HuaweiFindError
 from .const import (
     CONF_AMAP_KEY,
     CONF_COOKIE,
     CONF_DEVICES,
     CONF_GEOCODE_PROVIDER,
-    ADDRESS_KEEP_RADIUS,
     CONF_SCAN_INTERVAL,
     DOMAIN,
-    LOCATE_RETRIES,
-    LOCATE_RETRY_DELAY,
-    MAX_CONCURRENT_LOCATES,
     GEOCODE_AUTO,
-    GEOCODE_HUAWEI,
-    GEOCODE_NONE,
     SERVICE_REFRESH,
+    SERVICE_SET_COOKIE,
+)
+from .coordinator import (  # noqa: F401  (re-exported for platforms and tests)
+    _async_auto_refresh,
+    _async_locate_with_retry,
+    _async_refresh_addresses,
+    _async_save_results,
+    _distance_m,
+    _merge_result,
+    _start_auto_refresh,
+    async_refresh_device,
+    async_ring_device,
+    enabled_device_ids,
+)
+from .helpers import (  # noqa: F401  (re-exported for platforms and tests)
+    HuaweiFindRuntime,
+    _interval_minutes,
+    _make_cookie_listener,
+    _notify_reauth,
+    device_identifiers,
+    serialize_cookies,
+    signal_account,
+    signal_update,
+    supports_ring,
+)
+from .options import (  # noqa: F401  (re-exported for config flow and tests)
+    _async_heartbeat,
+    _check_expiry_reminder,
+    apply_options,
+    auth_age_days,
+)
+from .services import (  # noqa: F401  (registered below)
+    async_handle_refresh_service,
+    async_handle_set_cookie,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,340 +74,23 @@ PLATFORMS: list[Platform] = [
 ]
 
 SERVICE_SCHEMA = vol.Schema({})
+SET_COOKIE_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_COOKIE): str,
+        vol.Optional("entry_id"): str,
+    }
+)
 
 # The portal pings heartbeatCheck while a browser tab is open; doing the same
 # keeps the server-side session alive and rotates CSRFToken.
 HEARTBEAT_INTERVAL = timedelta(minutes=5)
 
 
-def signal_update(entry_id: str, device_id: str) -> str:
-    return f"{DOMAIN}_update_{entry_id}_{device_id}"
-
-
-def serialize_cookies(cookies: dict[str, str]) -> str:
-    return "; ".join(f"{key}={value}" for key, value in cookies.items())
-
-
-@dataclass
-class HuaweiFindRuntime:
-    """Runtime data."""
-
-    entry: ConfigEntry
-    client: HuaweiFindClient
-    devices: dict[str, dict[str, Any]]
-    results: dict[str, dict[str, Any]] = field(default_factory=dict)
-    locks: dict[str, asyncio.Lock] = field(default_factory=dict)
-    refreshing: set[str] = field(default_factory=set)
-    unsub_heartbeat: Callable[[], None] | None = None
-    store: Store | None = None
-    geocode_provider: str = GEOCODE_NONE
-    amap_key: str = ""
-    save_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    auto_refresh_unsub: Callable[[], None] | None = None
-    reauth_requested: bool = False
-    unloading: bool = False
-    tasks: set[asyncio.Task] = field(default_factory=set)
-    semaphore: asyncio.Semaphore = field(
-        default_factory=lambda: asyncio.Semaphore(MAX_CONCURRENT_LOCATES)
-    )
-
-
-def _make_cookie_listener(
-    hass: HomeAssistant, entry: ConfigEntry
-) -> Callable[[dict[str, str]], None]:
-    """Huawei Cloud rotates cookies (JSESSIONID etc.); save new ones back."""
-    state = {"value": entry.data.get(CONF_COOKIE, "")}
-
-    def listener(cookies: dict[str, str]) -> None:
-        value = serialize_cookies(cookies)
-        if value == state["value"]:
-            return
-        state["value"] = value
-        hass.config_entries.async_update_entry(
-            entry, data={**entry.data, CONF_COOKIE: value}
-        )
-
-    return listener
-
-
-def _interval_minutes(value: Any) -> int:
-    """Parse the scan_interval option defensively."""
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        _LOGGER.warning("Invalid scan_interval %r, auto refresh disabled", value)
-        return 0
-
-
-def _notify_reauth(hass: HomeAssistant, runtime: HuaweiFindRuntime, reason: str) -> None:
-    """Ask the user to re-authenticate; only once until it succeeds again."""
-    if runtime.reauth_requested:
-        return
-    runtime.reauth_requested = True
-    persistent_notification.async_create(
-        hass,
-        f"The Huawei Cloud session has expired ({reason}).\n\n"
-        "Go to Settings > Devices & Services > Huawei Cloud Find Device "
-        "and click Re-authenticate, then log in to cloud.huawei.com again "
-        "and paste the new Cookie.",
-        title="Huawei Cloud Find Device: re-authentication required",
-        notification_id=f"{DOMAIN}_reauth_{runtime.entry.entry_id}",
-    )
-    runtime.entry.async_start_reauth(hass)
-
-
-@callback
-def enabled_device_ids(hass: HomeAssistant, runtime: HuaweiFindRuntime) -> list[str]:
-    """Return device ids the user has NOT disabled in the UI."""
-    device_reg = dr.async_get(hass)
-    entity_reg = er.async_get(hass)
-    active: list[str] = []
-    for device_id in runtime.devices:
-        device = device_reg.async_get_device(identifiers={(DOMAIN, device_id)})
-        if device is None:
-            active.append(device_id)
-            continue
-        if device.disabled_by is not None:
-            continue
-        entries = er.async_entries_for_device(
-            entity_reg, device.id, include_disabled_entities=True
-        )
-        if entries and all(entry.disabled_by is not None for entry in entries):
-            continue
-        active.append(device_id)
-    return active
-
-
-async def _async_locate_with_retry(
-    runtime: HuaweiFindRuntime, device: dict[str, Any]
-) -> dict[str, Any]:
-    """Locate a device, retrying once on transient API errors."""
-    last_error: HuaweiFindError | None = None
-    for attempt in range(LOCATE_RETRIES + 1):
-        try:
-            return await runtime.client.async_locate_and_wait(device)
-        except (HuaweiFindAuthError, HuaweiFindDeviceError):
-            raise
-        except HuaweiFindError as err:
-            last_error = err
-            if attempt < LOCATE_RETRIES:
-                await asyncio.sleep(LOCATE_RETRY_DELAY)
-    raise last_error  # type: ignore[misc]
-
-
-def _distance_m(
-    lat1: float, lon1: float, lat2: float, lon2: float
-) -> float:
-    """Great-circle distance in meters."""
-    radius = 6371000
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = phi2 - phi1
-    dlambda = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dphi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    )
-    return 2 * radius * math.asin(math.sqrt(a))
-
-
-def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
-    """Keep the last known position when a refresh fails."""
-    merged = dict(result)
-    merged["last_attempt"] = dt_util.utcnow()
-    if result.get("status") == "ok":
-        merged["stale"] = False
-        # Reverse geocoding can fail transiently; keep the previous address
-        # as long as the device has not moved significantly.
-        if (
-            not merged.get("address")
-            and previous.get("address")
-            and previous.get("latitude") is not None
-            and previous.get("longitude") is not None
-        ):
-            moved = _distance_m(
-                previous["latitude"],
-                previous["longitude"],
-                merged["latitude"],
-                merged["longitude"],
-            )
-            if moved <= ADDRESS_KEEP_RADIUS:
-                merged["address"] = previous["address"]
-                merged["address_stale"] = True
-                return merged
-        merged["address_stale"] = False
-        return merged
-
-    if previous.get("latitude") is not None and previous.get("longitude") is not None:
-        kept_address = False
-        for key in (
-            "latitude",
-            "longitude",
-            "accuracy",
-            "battery",
-            "battery_charging",
-            "screen_locked",
-            "coordinate_system",
-            "device_time",
-            "located_at",
-            "address",
-        ):
-            if key in previous and key not in merged:
-                merged[key] = previous[key]
-                if key == "address":
-                    kept_address = True
-        merged["stale"] = True
-        if kept_address:
-            # The address is inherited, not freshly resolved
-            merged["address_stale"] = True
-        return merged
-
-    merged["stale"] = False
-    return merged
-
-
-async def async_refresh_device(
-    hass: HomeAssistant, runtime: HuaweiFindRuntime, device_id: str
-) -> dict[str, Any]:
-    """Trigger one locate request for a device and poll for the result."""
-    device = runtime.devices.get(device_id)
-    if device is None:
-        return {"status": "error", "last_error": "Device not found"}
-
-    lock = runtime.locks.setdefault(device_id, asyncio.Lock())
-    if lock.locked():
-        _LOGGER.debug(
-            "%s is already refreshing, skipping duplicate request", device.get("name")
-        )
-        return runtime.results.get(device_id, {})
-
-    task = asyncio.current_task()
-    if task is not None:
-        runtime.tasks.add(task)
-    try:
-        async with lock:
-            runtime.refreshing.add(device_id)
-            async_dispatcher_send(
-                hass, signal_update(runtime.entry.entry_id, device_id)
-            )
-            try:
-                async with runtime.semaphore:
-                    result = await _async_locate_with_retry(runtime, device)
-            except HuaweiFindAuthError as err:
-                _LOGGER.warning("Huawei Cloud session expired: %s", err)
-                result = {"status": "auth_expired", "last_error": str(err)}
-                _notify_reauth(hass, runtime, str(err))
-            except HuaweiFindDeviceError as err:
-                _LOGGER.debug("Device %s is not reachable: %s", device.get("name"), err)
-                result = {"status": "error", "last_error": str(err)}
-            except HuaweiFindError as err:
-                _LOGGER.warning(
-                    "Failed to refresh location for %s: %s", device.get("name"), err
-                )
-                result = {"status": "error", "last_error": str(err)}
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.exception("Unexpected error refreshing %s", device.get("name"))
-                result = {"status": "error", "last_error": f"Unexpected error: {err}"}
-            finally:
-                runtime.refreshing.discard(device_id)
-
-            if result.get("status") == "ok" and runtime.geocode_provider != GEOCODE_NONE:
-                address = await async_reverse_geocode(
-                    hass,
-                    runtime.geocode_provider,
-                    runtime.amap_key,
-                    result["latitude"],
-                    result["longitude"],
-                )
-                # Only set when successful: a None must not wipe the merged address
-                if address:
-                    result["address"] = address
-
-            result = _merge_result(runtime.results.get(device_id) or {}, result)
-
-            if result.get("status") == "ok":
-                runtime.reauth_requested = False
-                persistent_notification.async_dismiss(
-                    hass, f"{DOMAIN}_reauth_{runtime.entry.entry_id}"
-                )
-
-            if runtime.unloading:
-                # Entry is being unloaded; never write through a stale runtime
-                return result
-
-            runtime.results[device_id] = result
-            await _async_save_results(runtime)
-            async_dispatcher_send(
-                hass, signal_update(runtime.entry.entry_id, device_id)
-            )
-            return result
-    finally:
-        if task is not None:
-            runtime.tasks.discard(task)
-
-
-async def _async_save_results(runtime: HuaweiFindRuntime) -> None:
-    """Persist the latest results so they survive a restart."""
-    if runtime.store is None:
-        return
-    try:
-        # Build the snapshot inside the lock so a queued save cannot write
-        # an older view over a newer one.
-        async with runtime.save_lock:
-            payload: dict[str, Any] = {}
-            for device_id, result in runtime.results.items():
-                item = dict(result)
-                for key in ("located_at", "last_attempt"):
-                    value = item.get(key)
-                    if hasattr(value, "isoformat"):
-                        item[key] = value.isoformat()
-                payload[device_id] = item
-            await runtime.store.async_save(payload)
-    except Exception:  # noqa: BLE001
-        _LOGGER.exception("Failed to save location results")
-
-
-async def async_handle_refresh_service(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Service handler: refresh every device on the account."""
-    tasks = [
-        async_refresh_device(hass, runtime, device_id)
-        for runtime in list(hass.data.get(DOMAIN, {}).values())
-        for device_id in enabled_device_ids(hass, runtime)
-    ]
-    if tasks:
-        await asyncio.gather(*tasks)
-
-
-async def _async_auto_refresh(hass: HomeAssistant, runtime: HuaweiFindRuntime) -> None:
-    """Periodic refresh of every device (driven by the scan_interval option)."""
-    if runtime.reauth_requested:
-        return
-    tasks = [
-        async_refresh_device(hass, runtime, device_id)
-        for device_id in enabled_device_ids(hass, runtime)
-    ]
-    if tasks:
-        await asyncio.gather(*tasks)
-
-
-async def _async_heartbeat(hass: HomeAssistant, runtime: HuaweiFindRuntime) -> None:
-    """Keep the session warm and detect an expired session early."""
-    try:
-        await runtime.client.async_heartbeat()
-    except HuaweiFindAuthError as err:
-        _LOGGER.warning("Heartbeat detected an expired session: %s", err)
-        _notify_reauth(hass, runtime, str(err))
-    except HuaweiFindError as err:
-        _LOGGER.debug("Heartbeat error (ignored): %s", err)
-    else:
-        persistent_notification.async_dismiss(
-            hass, f"{DOMAIN}_reauth_{runtime.entry.entry_id}"
-        )
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the config entry."""
     client = HuaweiFindClient(
-        entry.data.get(CONF_COOKIE, ""), cookie_listener=_make_cookie_listener(hass, entry)
+        entry.data.get(CONF_COOKIE, ""),
+        cookie_listener=_make_cookie_listener(hass, entry),
     )
 
     try:
@@ -449,6 +147,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             partial(async_handle_refresh_service, hass),
             schema=SERVICE_SCHEMA,
         )
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_COOKIE,
+            partial(async_handle_set_cookie, hass),
+            schema=SET_COOKIE_SCHEMA,
+        )
 
     async def _heartbeat(_now) -> None:
         await _async_heartbeat(hass, runtime)
@@ -457,15 +161,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, _heartbeat, HEARTBEAT_INTERVAL
     )
 
-    interval = _interval_minutes(options.get(CONF_SCAN_INTERVAL))
-    if interval > 0:
-        async def _auto(_now) -> None:
-            await _async_auto_refresh(hass, runtime)
-
-        runtime.auto_refresh_unsub = async_track_time_interval(
-            hass, _auto, timedelta(minutes=interval)
-        )
-        _LOGGER.info("Automatic location refresh enabled every %d minute(s)", interval)
+    _start_auto_refresh(
+        hass, runtime, _interval_minutes(options.get(CONF_SCAN_INTERVAL))
+    )
 
     _LOGGER.info(
         "Huawei Cloud Find Device ready with %d device(s): %s",
@@ -479,7 +177,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload the config entry."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
-        runtime: HuaweiFindRuntime | None = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        runtime: HuaweiFindRuntime | None = hass.data.get(DOMAIN, {}).pop(
+            entry.entry_id, None
+        )
         if runtime is not None:
             runtime.unloading = True
             if runtime.unsub_heartbeat is not None:

@@ -61,6 +61,7 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._cookie = ""
         self._devices: list[dict[str, Any]] = []
+        self._user_id = ""
 
     @staticmethod
     @callback
@@ -95,6 +96,7 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["base"] = "no_devices"
                 else:
                     if client.user_id:
+                        self._user_id = client.user_id
                         await self.async_set_unique_id(f"huawei_{client.user_id}")
                         self._abort_if_unique_id_configured()
                     self._cookie = cookie
@@ -111,9 +113,15 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
-            selected = user_input.get(CONF_DEVICES) or [d["id"] for d in self._devices]
+            selected = user_input.get(CONF_DEVICES) or [
+                device["id"] for device in self._devices
+            ]
             return self.async_create_entry(
-                title=ENTRY_TITLE,
+                title=(
+                    f"{ENTRY_TITLE} ({self._user_id[-4:]})"
+                    if self._user_id
+                    else ENTRY_TITLE
+                ),
                 data={
                     CONF_COOKIE: self._cookie,
                     CONF_DEVICES: selected,
@@ -216,9 +224,14 @@ class HuaweiFindOptionsFlow(OptionsFlow):
             # Write the key (even when cleared) so removing it actually takes effect
             options[CONF_AMAP_KEY] = (user_input.get(CONF_AMAP_KEY) or "").strip()
             self.hass.config_entries.async_update_entry(entry, options=options)
-            self.hass.async_create_task(
-                self.hass.config_entries.async_reload(entry.entry_id)
-            )
+
+            from . import apply_options  # local import avoids a load-time cycle
+
+            if not apply_options(self.hass, entry, options):
+                # Entry is not loaded right now; fall back to a reload
+                self.hass.async_create_task(
+                    self.hass.config_entries.async_reload(entry.entry_id)
+                )
             return self.async_create_entry(title="", data=options)
 
         current = entry.options
@@ -234,23 +247,23 @@ class HuaweiFindOptionsFlow(OptionsFlow):
                             options=[
                                 SelectOptionDict(
                                     value=GEOCODE_AUTO,
-                                    label="Auto (Huawei -> AMap -> OSM)",
+                                    label="Auto — Huawei → AMap → OSM (recommended)",
                                 ),
                                 SelectOptionDict(
                                     value=GEOCODE_HUAWEI,
-                                    label="Huawei Map (built-in, no key)",
-                                ),
-                                SelectOptionDict(
-                                    value=GEOCODE_NONE,
-                                    label="No address lookup (coordinates only)",
+                                    label="Huawei Map (no key needed)",
                                 ),
                                 SelectOptionDict(
                                     value=GEOCODE_AMAP,
-                                    label="AMap / Gaode web service (requires key)",
+                                    label="AMap / Gaode (requires a key)",
                                 ),
                                 SelectOptionDict(
                                     value=GEOCODE_OSM,
-                                    label="OpenStreetMap Nominatim (no key)",
+                                    label="OpenStreetMap (no key)",
+                                ),
+                                SelectOptionDict(
+                                    value=GEOCODE_NONE,
+                                    label="Disabled — coordinates only",
                                 ),
                             ]
                         )

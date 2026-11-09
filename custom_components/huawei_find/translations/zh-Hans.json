@@ -54,6 +54,9 @@
       },
       "refresh": {
         "name": "刷新定位"
+      },
+      "ring": {
+        "name": "响铃"
       }
     },
     "sensor": {
@@ -83,6 +86,16 @@
       "name": "刷新定位",
       "description": "让华为云查询一次账号下全部设备的位置。",
       "fields": {}
+    },
+    "set_cookie": {
+      "name": "设置 Cookie",
+      "description": "不经过界面，直接更新华为云会话 Cookie。",
+      "fields": {
+        "cookie": {
+          "name": "Cookie",
+          "description": "Full cookie header value"
+        }
+      }
     }
   }
 }

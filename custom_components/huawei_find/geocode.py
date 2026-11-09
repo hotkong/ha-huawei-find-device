@@ -171,7 +171,7 @@ async def _osm(hass: HomeAssistant, latitude: float, longitude: float) -> str | 
         "zoom": 18,
         "accept-language": "zh-CN,zh,en",
     }
-    headers = {"User-Agent": "HomeAssistant-huawei_find/0.5.2"}
+    headers = {"User-Agent": "HomeAssistant-huawei_find/0.5.3"}
 
     async with _OSM_LOCK:
         wait = OSM_MIN_INTERVAL - (time.monotonic() - _osm_last_request)

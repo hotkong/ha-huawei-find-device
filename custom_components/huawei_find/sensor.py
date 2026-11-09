@@ -12,7 +12,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import HuaweiFindRuntime, signal_update
+from . import HuaweiFindRuntime, device_identifiers, signal_update
 from .const import (
     GEOCODE_NONE,
     ATTR_ACCURACY,
@@ -63,7 +63,7 @@ class HuaweiLocationSensor(SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
-            identifiers={(DOMAIN, self._device["id"])},
+            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
             name=self._device.get("name") or "Huawei device",
             manufacturer="Huawei",
             model=self._device.get("model") or None,
@@ -164,7 +164,7 @@ class HuaweiBatterySensor(SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
-            identifiers={(DOMAIN, self._device["id"])},
+            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
             name=self._device.get("name") or "Huawei device",
             manufacturer="Huawei",
             model=self._device.get("model") or None,
@@ -221,7 +221,7 @@ class HuaweiPositionStatusSensor(SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
-            identifiers={(DOMAIN, self._device["id"])},
+            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
             name=self._device.get("name") or "Huawei device",
             manufacturer="Huawei",
             model=self._device.get("model") or None,
