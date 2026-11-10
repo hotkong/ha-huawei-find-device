@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Huawei Cloud",
-        "description": "Log in to https://cloud.huawei.com/, open \"Find Device\", press F12 -> Network, trigger one locate request, then copy the whole Cookie request header and paste it below.",
+        "description": "Log in at [cloud.huawei.com](https://cloud.huawei.com/) → open \"Find Device\" → press F12 → Network, trigger one locate, then copy the whole Cookie request header and paste it below.",
         "data": {
           "cookie": "Cookie"
         }
@@ -17,7 +17,7 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate Huawei Cloud",
-        "description": "The Huawei Cloud session has expired. Log in again and paste a fresh Cookie.",
+        "description": "The Huawei Cloud session has expired. Log in again at [cloud.huawei.com](https://cloud.huawei.com/), open \"Find Device\", then copy a fresh Cookie request header and paste it below.",
         "data": {
           "cookie": "Cookie"
         }

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "连接华为云",
-        "description": "在电脑浏览器登录 https://cloud.huawei.com/ ，打开「查找设备」，按 F12 → 网络(Network)，点一次定位，然后复制请求头里的 Cookie 整行粘贴到下面。",
+        "description": "请在 [华为云空间](https://cloud.huawei.com/) 登录 → 打开「查找设备」并点一次定位 → 按 F12 → Network，复制完整的 Cookie 请求头粘贴到下方。",
         "data": {
           "cookie": "Cookie"
         }
@@ -17,7 +17,7 @@
       },
       "reauth_confirm": {
         "title": "重新授权华为云",
-        "description": "华为云登录态已失效，请重新登录后粘贴新的 Cookie。",
+        "description": "华为云登录态已失效。请到 [华为云空间](https://cloud.huawei.com/) 重新登录，打开「查找设备」后复制新的 Cookie 请求头粘贴到下方。",
         "data": {
           "cookie": "Cookie"
         }
