@@ -131,6 +131,21 @@ def gcj02_to_wgs84(lng: float, lat: float) -> tuple[float, float]:
     return lng - dlng, lat - dlat
 
 
+def wgs84_to_gcj02(lng: float, lat: float) -> tuple[float, float]:
+    """WGS-84 -> GCJ-02 (Chinese map services), returns (lng, lat)."""
+    if _out_of_china(lng, lat):
+        return lng, lat
+    dlat = _transform_lat(lng - 105.0, lat - 35.0)
+    dlng = _transform_lng(lng - 105.0, lat - 35.0)
+    radlat = lat / 180.0 * math.pi
+    magic = math.sin(radlat)
+    magic = 1 - _EE * magic * magic
+    sqrtmagic = math.sqrt(magic)
+    dlat = (dlat * 180.0) / ((_A * (1 - _EE)) / (magic * sqrtmagic) * math.pi)
+    dlng = (dlng * 180.0) / (_A / sqrtmagic * math.cos(radlat) * math.pi)
+    return lng + dlng, lat + dlat
+
+
 def bd09_to_gcj02(bd_lng: float, bd_lat: float) -> tuple[float, float]:
     """BD-09 -> GCJ-02, returns (lng, lat)."""
     x = bd_lng - 0.0065

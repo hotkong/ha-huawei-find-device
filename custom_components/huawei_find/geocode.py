@@ -23,6 +23,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .api import wgs84_to_gcj02
 from .const import (
     GEOCODE_AMAP,
     GEOCODE_AUTO,
@@ -134,10 +135,12 @@ def _prune_cache() -> None:
 async def _amap(
     hass: HomeAssistant, api_key: str, latitude: float, longitude: float
 ) -> str | None:
+    # AMap expects GCJ-02, the integration stores WGS-84
+    gcj_lng, gcj_lat = wgs84_to_gcj02(longitude, latitude)
     session = async_get_clientsession(hass)
     params = {
         "key": api_key,
-        "location": f"{longitude:.6f},{latitude:.6f}",  # AMap expects lng,lat
+        "location": f"{gcj_lng:.6f},{gcj_lat:.6f}",  # AMap expects lng,lat
         "extensions": "base",
         "radius": 200,
     }
@@ -197,9 +200,11 @@ async def _huawei(
     hass: HomeAssistant, latitude: float, longitude: float
 ) -> str | None:
     """Reverse geocode with Huawei's own map service (used by the portal)."""
+    # Huawei map service expects GCJ-02, the integration stores WGS-84
+    gcj_lng, gcj_lat = wgs84_to_gcj02(longitude, latitude)
     session = async_get_clientsession(hass)
     payload = {
-        "location": {"latitude": latitude, "longitude": longitude},
+        "location": {"latitude": gcj_lat, "longitude": gcj_lng},
         "language": "zh-CN",
         "isExtension": True,
         "isExtendedAoi": True,
