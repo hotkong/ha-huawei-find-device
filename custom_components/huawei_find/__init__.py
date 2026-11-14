@@ -48,6 +48,7 @@ from .helpers import (  # noqa: F401  (re-exported for platforms and tests)
     _make_cookie_listener,
     _notify_reauth,
     device_identifiers,
+    prune_removed_devices,
     serialize_cookies,
     signal_account,
     signal_update,
@@ -116,6 +117,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     stored = await store.async_load() or {}
     results: dict[str, dict[str, Any]] = {}
     for device_id, item in stored.items():
+        if device_id not in devices:
+            continue
         if not isinstance(item, dict):
             continue
         saved = dict(item)

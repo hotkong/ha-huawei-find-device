@@ -9,8 +9,8 @@
         }
       },
       "devices": {
-        "title": "选择设备",
-        "description": "默认全选。每台设备会生成一个定位传感器和 GPS 追踪器。",
+        "title": "设备",
+        "description": "取消勾选即可停止跟踪该设备；保存后被移除设备的实体与设备条目会自动清理。",
         "data": {
           "devices": "设备"
         }
@@ -21,6 +21,13 @@
         "data": {
           "cookie": "Cookie"
         }
+      },
+      "init": {
+        "title": "配置"
+      },
+      "options": {
+        "title": "地址与刷新",
+        "description": "逆地理编码来源与自动刷新间隔。"
       }
     },
     "error": {
@@ -31,7 +38,9 @@
     "abort": {
       "already_configured": "该华为账号已经添加过了。",
       "reauth_successful": "重新授权成功。",
-      "reauth_failed": "重新授权失败。"
+      "reauth_failed": "重新授权失败。",
+      "session_expired": "华为云会话已过期，请先重新授权后再试。",
+      "cannot_connect": "暂时无法连接华为云。"
     }
   },
   "options": {

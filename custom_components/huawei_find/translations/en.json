@@ -9,8 +9,8 @@
         }
       },
       "devices": {
-        "title": "Select devices",
-        "description": "All devices are selected by default. Each device gets its own location sensor and GPS tracker.",
+        "title": "Devices",
+        "description": "Uncheck a device to stop tracking it; disabled devices keep no entities after saving.",
         "data": {
           "devices": "Devices"
         }
@@ -21,6 +21,13 @@
         "data": {
           "cookie": "Cookie"
         }
+      },
+      "init": {
+        "title": "Options"
+      },
+      "options": {
+        "title": "Address & refresh",
+        "description": "Reverse geocoding source and automatic refresh interval."
       }
     },
     "error": {
@@ -31,7 +38,9 @@
     "abort": {
       "already_configured": "This Huawei account is already configured.",
       "reauth_successful": "Re-authentication successful.",
-      "reauth_failed": "Re-authentication failed."
+      "reauth_failed": "Re-authentication failed.",
+      "session_expired": "The Huawei Cloud session has expired. Re-authenticate first, then try again.",
+      "cannot_connect": "Cannot reach Huawei Cloud right now."
     }
   },
   "options": {

@@ -10,7 +10,9 @@ from typing import Any
 
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
 from .api import HuaweiFindClient
@@ -39,6 +41,37 @@ def signal_update(entry_id: str, device_id: str) -> str:
 def signal_account(entry_id: str) -> str:
     """Dispatcher signal for account-level state (hub button)."""
     return f"{DOMAIN}_account_{entry_id}"
+
+
+def scoped_device_id(entry_id: str, identifier: str) -> str | None:
+    """Return the device id from an entry-scoped registry identifier."""
+    prefix = f"{entry_id}:"
+    return identifier[len(prefix) :] if identifier.startswith(prefix) else None
+
+
+@callback
+def prune_removed_devices(
+    hass: HomeAssistant, entry: ConfigEntry, kept_ids: set[str]
+) -> None:
+    """Drop registry entries (entities and device) for deselected devices."""
+    device_reg = dr.async_get(hass)
+    entity_reg = er.async_get(hass)
+    for device in dr.async_entries_for_config_entry(device_reg, entry.entry_id):
+        device_ids = [
+            scoped_device_id(entry.entry_id, value)
+            for domain, value in device.identifiers
+            if domain == DOMAIN
+        ]
+        device_ids = [device_id for device_id in device_ids if device_id]
+        if not device_ids:
+            continue  # account hub device
+        if any(device_id in kept_ids for device_id in device_ids):
+            continue
+        for entity_entry in er.async_entries_for_device(
+            entity_reg, device.id, include_disabled_entities=True
+        ):
+            entity_reg.async_remove(entity_entry.entity_id)
+        device_reg.async_remove_device(device.id)
 
 
 def serialize_cookies(cookies: dict[str, str]) -> str:

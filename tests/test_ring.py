@@ -35,6 +35,7 @@ def _runtime(ring_result=True):
         devices={"d1": {"id": "d1", "name": "Test", "per_device_type": "0"}},
         last_ring={},
         ring_results={},
+        ring_errors={},
         client=SimpleNamespace(async_ring=AsyncMock(return_value=ring_result)),
         entry=SimpleNamespace(entry_id="e1"),
     )

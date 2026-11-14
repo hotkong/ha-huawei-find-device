@@ -208,9 +208,14 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HuaweiFindOptionsFlow(OptionsFlow):
-    """Reverse geocoding options (the Huawei API returns coordinates only)."""
+    """Options menu: geocoding/interval and device management."""
 
     async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return self.async_show_menu(step_id="init", menu_options=["options", "devices"])
+
+    async def async_step_options(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         entry = self.config_entry
@@ -236,7 +241,7 @@ class HuaweiFindOptionsFlow(OptionsFlow):
 
         current = entry.options
         return self.async_show_form(
-            step_id="init",
+            step_id="options",
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -287,4 +292,62 @@ class HuaweiFindOptionsFlow(OptionsFlow):
                     ),
                 }
             ),
+        )
+
+    async def async_step_devices(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add or remove tracked devices after the integration is set up."""
+        entry = self.config_entry
+        devices = getattr(self, "_available_devices", None)
+        if devices is None:
+            client = HuaweiFindClient(entry.data.get(CONF_COOKIE, ""))
+            try:
+                devices = await client.async_get_devices()
+            except HuaweiFindAuthError:
+                return self.async_abort(reason="session_expired")
+            except HuaweiFindError:
+                return self.async_abort(reason="cannot_connect")
+            finally:
+                await client.async_close()
+            self._available_devices = devices
+
+        current = list(entry.data.get(CONF_DEVICES) or [d["id"] for d in devices])
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            selected = user_input.get(CONF_DEVICES) or []
+            if not selected:
+                errors["base"] = "no_devices"
+            else:
+                from . import prune_removed_devices
+
+                prune_removed_devices(self.hass, entry, set(selected))
+                self.hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, CONF_DEVICES: selected}
+                )
+                self.hass.async_create_task(
+                    self.hass.config_entries.async_reload(entry.entry_id)
+                )
+                return self.async_create_entry(title="", data=entry.options)
+
+        options = [
+            SelectOptionDict(
+                value=device["id"],
+                label=(
+                    f"{device['name']} "
+                    f"({'shared' if device.get('is_shared') else 'own'})"
+                ),
+            )
+            for device in devices
+        ]
+        return self.async_show_form(
+            step_id="devices",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_DEVICES, default=current): SelectSelector(
+                        SelectSelectorConfig(options=options, multiple=True)
+                    )
+                }
+            ),
+            errors=errors,
         )
