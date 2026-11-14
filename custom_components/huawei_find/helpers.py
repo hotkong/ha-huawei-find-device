@@ -70,6 +70,7 @@ class HuaweiFindRuntime:
     unloading: bool = False
     tasks: set[asyncio.Task] = field(default_factory=set)
     last_ring: dict[str, float] = field(default_factory=dict)
+    ring_errors: dict[str, str] = field(default_factory=dict)
     ring_results: dict[str, Any] = field(default_factory=dict)
     semaphore: asyncio.Semaphore = field(
         default_factory=lambda: asyncio.Semaphore(MAX_CONCURRENT_LOCATES)

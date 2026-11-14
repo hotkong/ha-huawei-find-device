@@ -196,6 +196,7 @@ class HuaweiRingButton(ButtonEntity):
         return {
             "device_id": self._device["id"],
             "last_ring": last.isoformat() if hasattr(last, "isoformat") else last,
+            "last_ring_error": self._runtime.ring_errors.get(self._device["id"]),
         }
 
     async def async_press(self) -> None:

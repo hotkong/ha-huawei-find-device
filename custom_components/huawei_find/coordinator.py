@@ -224,6 +224,7 @@ async def async_ring_device(
             "ok": False,
             "error": "Ringing is only supported for phones on this account",
         }
+    _LOGGER.info("Ring requested for %s", device.get("name"))
 
     elapsed = time.monotonic() - runtime.last_ring.get(device_id, 0.0)
     if elapsed < RING_COOLDOWN:
@@ -234,12 +235,19 @@ async def async_ring_device(
         await runtime.client.async_ring(device)
     except HuaweiFindAuthError as err:
         _notify_reauth(hass, runtime, str(err))
+        runtime.ring_errors[device_id] = f"auth: {err}"
+        _LOGGER.warning("Ring failed for %s: session expired: %s", device.get("name"), err)
         return {"ok": False, "error": str(err)}
     except HuaweiFindDeviceError as err:
+        runtime.ring_errors[device_id] = f"device: {err}"
+        _LOGGER.warning("Ring failed for %s: %s", device.get("name"), err)
         return {"ok": False, "error": str(err)}
     except HuaweiFindError as err:
+        runtime.ring_errors[device_id] = f"api: {err}"
+        _LOGGER.warning("Ring failed for %s: %s", device.get("name"), err)
         return {"ok": False, "error": str(err)}
 
+    runtime.ring_errors.pop(device_id, None)
     runtime.last_ring[device_id] = time.monotonic()
     runtime.ring_results[device_id] = dt_util.utcnow()
     async_dispatcher_send(hass, signal_update(runtime.entry.entry_id, device_id))
