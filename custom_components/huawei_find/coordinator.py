@@ -29,6 +29,8 @@ from .const import (
     LOCATE_RETRIES,
     LOCATE_RETRY_DELAY,
     RING_COOLDOWN,
+    RING_RETRIES,
+    RING_RETRY_DELAY,
 )
 from .geocode import async_reverse_geocode
 from .helpers import (
@@ -231,21 +233,32 @@ async def async_ring_device(
         wait = int(RING_COOLDOWN - elapsed) + 1
         return {"ok": False, "error": f"Please wait {wait}s before ringing again"}
 
-    try:
-        await runtime.client.async_ring(device)
-    except HuaweiFindAuthError as err:
-        _notify_reauth(hass, runtime, str(err))
-        runtime.ring_errors[device_id] = f"auth: {err}"
-        _LOGGER.warning("Ring failed for %s: session expired: %s", device.get("name"), err)
-        return {"ok": False, "error": str(err)}
-    except HuaweiFindDeviceError as err:
-        runtime.ring_errors[device_id] = f"device: {err}"
-        _LOGGER.warning("Ring failed for %s: %s", device.get("name"), err)
-        return {"ok": False, "error": str(err)}
-    except HuaweiFindError as err:
-        runtime.ring_errors[device_id] = f"api: {err}"
-        _LOGGER.warning("Ring failed for %s: %s", device.get("name"), err)
-        return {"ok": False, "error": str(err)}
+    for attempt in range(RING_RETRIES + 1):
+        try:
+            await runtime.client.async_ring(device)
+            break
+        except HuaweiFindAuthError as err:
+            _notify_reauth(hass, runtime, str(err))
+            runtime.ring_errors[device_id] = f"auth: {err}"
+            _LOGGER.warning("Ring failed for %s: session expired: %s", device.get("name"), err)
+            return {"ok": False, "error": str(err)}
+        except HuaweiFindDeviceError as err:
+            runtime.ring_errors[device_id] = f"device: {err}"
+            _LOGGER.warning("Ring failed for %s: %s", device.get("name"), err)
+            return {"ok": False, "error": str(err)}
+        except HuaweiFindError as err:
+            push_failed = "send push failed" in str(err).lower()
+            if push_failed and attempt < RING_RETRIES:
+                _LOGGER.info(
+                    "Ring push failed for %s, retrying in %ss",
+                    device.get("name"),
+                    RING_RETRY_DELAY,
+                )
+                await asyncio.sleep(RING_RETRY_DELAY)
+                continue
+            runtime.ring_errors[device_id] = f"api: {err}"
+            _LOGGER.warning("Ring failed for %s: %s", device.get("name"), err)
+            return {"ok": False, "error": str(err)}
 
     runtime.ring_errors.pop(device_id, None)
     runtime.last_ring[device_id] = time.monotonic()

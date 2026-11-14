@@ -37,6 +37,8 @@ SERVICE_SET_COOKIE = "set_cookie"
 
 # Ring (find my phone) parameters
 RING_COOLDOWN = 30  # seconds between rings for the same device
+RING_RETRIES = 1  # Huawei push delivery can fail once while the phone wakes up
+RING_RETRY_DELAY = 3  # seconds before retrying a failed ring push
 HW_MODEL = "noh-an00"  # x-hw-model header the portal sends
 
 # Warn the user before the observed ~7 day session lifetime runs out

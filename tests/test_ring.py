@@ -9,6 +9,7 @@ from custom_components.huawei_find.helpers import supports_ring
 from custom_components.huawei_find.api import (
     HuaweiFindClient,
     HuaweiFindDeviceError,
+    HuaweiFindError,
 )
 
 
@@ -53,6 +54,26 @@ class RingCapabilityTests(unittest.TestCase):
 
 
 class RingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_push_failure_is_retried_once(self):
+        runtime = _runtime()
+        runtime.client.async_ring = AsyncMock(
+            side_effect=[HuaweiFindError("Ring failed: Send push failed"), True]
+        )
+        with patch("custom_components.huawei_find.coordinator.async_dispatcher_send"), \
+             patch("custom_components.huawei_find.coordinator.asyncio.sleep", AsyncMock()):
+            result = await async_ring_device(SimpleNamespace(), runtime, "d1")
+        self.assertTrue(result["ok"])
+        self.assertEqual(runtime.client.async_ring.await_count, 2)
+
+    async def test_other_api_error_is_not_retried(self):
+        runtime = _runtime()
+        runtime.client.async_ring = AsyncMock(
+            side_effect=HuaweiFindError("Ring failed: code=1001")
+        )
+        result = await async_ring_device(SimpleNamespace(), runtime, "d1")
+        self.assertFalse(result["ok"])
+        self.assertEqual(runtime.client.async_ring.await_count, 1)
+
     async def test_ring_succeeds_once_per_cooldown(self):
         runtime = _runtime()
         with patch("custom_components.huawei_find.coordinator.async_dispatcher_send"):
