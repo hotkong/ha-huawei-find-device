@@ -19,6 +19,7 @@ from . import (
     device_identifiers,
     enabled_device_ids,
     signal_account,
+    signal_update,
     supports_ring,
 )
 from .const import CONF_AUTH_TIME, DOMAIN
@@ -188,6 +189,15 @@ class HuaweiRingButton(ButtonEntity):
             name=self._device.get("name") or "Huawei device",
             manufacturer="Huawei",
             model=self._device.get("model") or None,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_update(self._runtime.entry.entry_id, self._device["id"]),
+                self.async_write_ha_state,
+            )
         )
 
     @property
