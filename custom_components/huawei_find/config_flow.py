@@ -322,8 +322,8 @@ class HuaweiFindOptionsFlow(OptionsFlow):
                         SelectOptionDict(
                             value=device["id"],
                             label=(
-                                f"{device[name]} "
-                                f"({shared if device.get(is_shared) else own})"
+                                f"{device['name']} "
+                                f"({'shared' if device.get('is_shared') else 'own'})"
                             ),
                         )
                         for device in devices
