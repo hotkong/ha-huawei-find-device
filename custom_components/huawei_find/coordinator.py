@@ -226,8 +226,6 @@ async def async_ring_device(
             "ok": False,
             "error": "Ringing is only supported for phones on this account",
         }
-    _LOGGER.info("Ring requested for %s", device.get("name"))
-
     elapsed = time.monotonic() - runtime.last_ring.get(device_id, 0.0)
     if elapsed < RING_COOLDOWN:
         wait = int(RING_COOLDOWN - elapsed) + 1
