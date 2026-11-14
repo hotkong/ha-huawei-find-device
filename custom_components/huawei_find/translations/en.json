@@ -23,17 +23,15 @@
         }
       },
       "init": {
-        "title": "Options"
-      },
-      "options": {
-        "title": "Address & refresh",
-        "description": "Reverse geocoding source and automatic refresh interval."
+        "title": "Options",
+        "description": "Address source, refresh interval and tracked devices — all on one page."
       }
     },
     "error": {
       "invalid_auth": "Invalid or expired Cookie. Log in to Huawei Cloud again and copy a fresh one.",
       "cannot_connect": "Cannot reach Huawei Cloud.",
-      "no_devices": "No devices found for this account."
+      "no_devices": "No devices found for this account.",
+      "devices_unavailable": "Could not load the device list (the session may have expired). Only the address/refresh settings can be changed right now."
     },
     "abort": {
       "already_configured": "This Huawei account is already configured.",

@@ -208,146 +208,130 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HuaweiFindOptionsFlow(OptionsFlow):
-    """Options menu: geocoding/interval and device management."""
+    """Single page: address source, refresh interval and tracked devices."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="init", menu_options=["options", "devices"])
-
-    async def async_step_options(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
         entry = self.config_entry
-        if user_input is not None:
-            options = {
-                CONF_GEOCODE_PROVIDER: user_input.get(
-                    CONF_GEOCODE_PROVIDER, GEOCODE_NONE
-                ),
-                CONF_SCAN_INTERVAL: int(user_input.get(CONF_SCAN_INTERVAL) or 0),
-            }
-            # Write the key (even when cleared) so removing it actually takes effect
-            options[CONF_AMAP_KEY] = (user_input.get(CONF_AMAP_KEY) or "").strip()
-            self.hass.config_entries.async_update_entry(entry, options=options)
+        errors: dict[str, str] = {}
 
-            from . import apply_options  # local import avoids a load-time cycle
-
-            if not apply_options(self.hass, entry, options):
-                # Entry is not loaded right now; fall back to a reload
-                self.hass.async_create_task(
-                    self.hass.config_entries.async_reload(entry.entry_id)
-                )
-            return self.async_create_entry(title="", data=options)
-
-        current = entry.options
-        return self.async_show_form(
-            step_id="options",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_GEOCODE_PROVIDER,
-                        default=current.get(CONF_GEOCODE_PROVIDER, GEOCODE_AUTO),
-                    ): SelectSelector(
-                        SelectSelectorConfig(
-                            options=[
-                                SelectOptionDict(
-                                    value=GEOCODE_AUTO,
-                                    label="Auto — Huawei → AMap → OSM (recommended)",
-                                ),
-                                SelectOptionDict(
-                                    value=GEOCODE_HUAWEI,
-                                    label="Huawei Map (no key needed)",
-                                ),
-                                SelectOptionDict(
-                                    value=GEOCODE_AMAP,
-                                    label="AMap / Gaode (requires a key)",
-                                ),
-                                SelectOptionDict(
-                                    value=GEOCODE_OSM,
-                                    label="OpenStreetMap (no key)",
-                                ),
-                                SelectOptionDict(
-                                    value=GEOCODE_NONE,
-                                    label="Disabled — coordinates only",
-                                ),
-                            ]
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_AMAP_KEY, default=current.get(CONF_AMAP_KEY, "")
-                    ): TextSelector(
-                        TextSelectorConfig(type=TextSelectorType.PASSWORD)
-                    ),
-                    vol.Optional(
-                        CONF_SCAN_INTERVAL,
-                        default=current.get(CONF_SCAN_INTERVAL, 0),
-                    ): NumberSelector(
-                        NumberSelectorConfig(
-                            min=0,
-                            max=720,
-                            step=1,
-                            mode=NumberSelectorMode.BOX,
-                            unit_of_measurement="min",
-                        )
-                    ),
-                }
-            ),
-        )
-
-    async def async_step_devices(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Add or remove tracked devices after the integration is set up."""
-        entry = self.config_entry
         devices = getattr(self, "_available_devices", None)
-        if devices is None:
+        if devices is None and not getattr(self, "_devices_failed", False):
             client = HuaweiFindClient(entry.data.get(CONF_COOKIE, ""))
             try:
                 devices = await client.async_get_devices()
-            except HuaweiFindAuthError:
-                return self.async_abort(reason="session_expired")
-            except HuaweiFindError:
-                return self.async_abort(reason="cannot_connect")
+            except (HuaweiFindAuthError, HuaweiFindError):
+                devices = None
+                self._devices_failed = True
             finally:
                 await client.async_close()
             self._available_devices = devices
+        if getattr(self, "_devices_failed", False):
+            errors["base"] = "devices_unavailable"
 
-        current = list(entry.data.get(CONF_DEVICES) or [d["id"] for d in devices])
-        errors: dict[str, str] = {}
         if user_input is not None:
-            selected = user_input.get(CONF_DEVICES) or []
-            if not selected:
+            selected = user_input.get(CONF_DEVICES)
+            if selected is not None and not selected:
                 errors["base"] = "no_devices"
             else:
-                from . import prune_removed_devices
-
-                prune_removed_devices(self.hass, entry, set(selected))
-                self.hass.config_entries.async_update_entry(
-                    entry, data={**entry.data, CONF_DEVICES: selected}
-                )
-                self.hass.async_create_task(
-                    self.hass.config_entries.async_reload(entry.entry_id)
-                )
-                return self.async_create_entry(title="", data=entry.options)
-
-        options = [
-            SelectOptionDict(
-                value=device["id"],
-                label=(
-                    f"{device['name']} "
-                    f"({'shared' if device.get('is_shared') else 'own'})"
-                ),
-            )
-            for device in devices
-        ]
-        return self.async_show_form(
-            step_id="devices",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_DEVICES, default=current): SelectSelector(
-                        SelectSelectorConfig(options=options, multiple=True)
-                    )
+                options = {
+                    CONF_GEOCODE_PROVIDER: user_input.get(
+                        CONF_GEOCODE_PROVIDER, GEOCODE_AUTO
+                    ),
+                    CONF_AMAP_KEY: (user_input.get(CONF_AMAP_KEY) or "").strip(),
                 }
+                try:
+                    options[CONF_SCAN_INTERVAL] = max(
+                        0, int(user_input.get(CONF_SCAN_INTERVAL) or 0)
+                    )
+                except (TypeError, ValueError):
+                    options[CONF_SCAN_INTERVAL] = 0
+                self.hass.config_entries.async_update_entry(entry, options=options)
+
+                from . import apply_options, prune_removed_devices
+
+                if selected is not None:
+                    prune_removed_devices(self.hass, entry, set(selected))
+                    self.hass.config_entries.async_update_entry(
+                        entry, data={**entry.data, CONF_DEVICES: selected}
+                    )
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(entry.entry_id)
+                    )
+                elif not apply_options(self.hass, entry, options):
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(entry.entry_id)
+                    )
+                return self.async_create_entry(title="", data=options)
+
+        current = entry.options
+        schema: dict[Any, Any] = {
+            vol.Required(
+                CONF_GEOCODE_PROVIDER,
+                default=current.get(CONF_GEOCODE_PROVIDER, GEOCODE_AUTO),
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        SelectOptionDict(
+                            value=GEOCODE_AUTO,
+                            label="Auto — Huawei → AMap → OSM (recommended)",
+                        ),
+                        SelectOptionDict(
+                            value=GEOCODE_HUAWEI,
+                            label="Huawei Map (no key needed)",
+                        ),
+                        SelectOptionDict(
+                            value=GEOCODE_AMAP,
+                            label="AMap / Gaode (requires a key)",
+                        ),
+                        SelectOptionDict(
+                            value=GEOCODE_OSM,
+                            label="OpenStreetMap (no key)",
+                        ),
+                        SelectOptionDict(
+                            value=GEOCODE_NONE,
+                            label="Disabled — coordinates only",
+                        ),
+                    ]
+                )
             ),
-            errors=errors,
+            vol.Optional(
+                CONF_AMAP_KEY, default=current.get(CONF_AMAP_KEY, "")
+            ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+            vol.Optional(
+                CONF_SCAN_INTERVAL, default=current.get(CONF_SCAN_INTERVAL, 0)
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0,
+                    max=720,
+                    step=1,
+                    mode=NumberSelectorMode.BOX,
+                    unit_of_measurement="min",
+                )
+            ),
+        }
+
+        if devices is not None:
+            current_devices = list(
+                entry.data.get(CONF_DEVICES) or [d["id"] for d in devices]
+            )
+            schema[vol.Required(CONF_DEVICES, default=current_devices)] = SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        SelectOptionDict(
+                            value=device["id"],
+                            label=(
+                                f"{device[name]} "
+                                f"({shared if device.get(is_shared) else own})"
+                            ),
+                        )
+                        for device in devices
+                    ],
+                    multiple=True,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="init", data_schema=vol.Schema(schema), errors=errors
         )
