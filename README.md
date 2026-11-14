@@ -32,11 +32,12 @@ demand, or make the phone ring.
 - 每台设备一个 GPS 追踪器，可绑定到 `person`，在原生地图显示；
 - 电量、充电状态、上次定位状态各自独立成实体；
 - 单次定位失败不会清空位置：沿用上次结果并标记为「过期」，HA 重启后也保留；
-- 在界面上禁用的设备会被自动跳过，不再无谓唤醒。
+- 在界面上禁用的设备会被自动跳过，不再无谓唤醒；
+- 配置完成后可随时在「配置」页面增删要跟踪的设备，被移除设备的实体与设备条目会自动清理。
 
 **找回手机**
 
-- 每台自有手机一个「响铃」按钮，触发最大音量警报，30 秒冷却；
+- 每台自有手机一个「响铃」按钮，触发最大音量警报，30 秒冷却，推送失败会自动重试一次；
 - 只对本账号自己的手机有效：家人共享设备、手表、手环不支持。
 
 **自动化与维护**
@@ -200,11 +201,12 @@ resulting position.
 - GPS `device_tracker` per device, ready to attach to a `person`;
 - Separate battery, charging and last-locate-status entities;
 - Failed lookups keep the last known position (marked stale), and results survive restarts;
-- Devices disabled in the UI are skipped automatically.
+- Devices disabled in the UI are skipped automatically;
+- Tracked devices can be added or removed later from the Options page, with entities and device entries cleaned up.
 
 **Finding a phone**
 
-- A "ring device" button per own phone (max-volume alarm, 30 s cooldown);
+- A "ring device" button per own phone (max-volume alarm, 30 s cooldown, one automatic retry);
 - Own phones only — shared devices, watches and bands are not supported.
 
 **Automation and maintenance**
