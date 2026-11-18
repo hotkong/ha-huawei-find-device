@@ -35,17 +35,30 @@ from .const import (
     CONF_DEVICES,
     CONF_GEOCODE_PROVIDER,
     CONF_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     GEOCODE_AMAP,
     GEOCODE_AUTO,
     GEOCODE_HUAWEI,
     GEOCODE_NONE,
     GEOCODE_OSM,
+    MAX_SCAN_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 ENTRY_TITLE = "Huawei Cloud Find Device"
+
+
+def _scan_interval_value(value: Any) -> int:
+    """Clamp a scan_interval form value into [0, MAX_SCAN_INTERVAL]."""
+    if value is None or value == "":
+        return DEFAULT_SCAN_INTERVAL
+    try:
+        return max(0, min(MAX_SCAN_INTERVAL, int(value)))
+    except (TypeError, ValueError):
+        return DEFAULT_SCAN_INTERVAL
+
 
 COOKIE_SELECTOR = TextSelector(
     TextSelectorConfig(type=TextSelectorType.TEXT, multiline=True)
@@ -127,6 +140,11 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_DEVICES: selected,
                     CONF_AUTH_TIME: dt_util.utcnow().isoformat(),
                 },
+                options={
+                    CONF_SCAN_INTERVAL: _scan_interval_value(
+                        user_input.get(CONF_SCAN_INTERVAL)
+                    )
+                },
             )
 
         options = [
@@ -147,7 +165,18 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_DEVICES, default=[d["id"] for d in self._devices]
                     ): SelectSelector(
                         SelectSelectorConfig(options=options, multiple=True)
-                    )
+                    ),
+                    vol.Required(
+                        CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            min=0,
+                            max=MAX_SCAN_INTERVAL,
+                            step=1,
+                            mode=NumberSelectorMode.BOX,
+                            unit_of_measurement="min",
+                        )
+                    ),
                 }
             ),
         )
@@ -240,13 +269,10 @@ class HuaweiFindOptionsFlow(OptionsFlow):
                         CONF_GEOCODE_PROVIDER, GEOCODE_AUTO
                     ),
                     CONF_AMAP_KEY: (user_input.get(CONF_AMAP_KEY) or "").strip(),
+                    CONF_SCAN_INTERVAL: _scan_interval_value(
+                        user_input.get(CONF_SCAN_INTERVAL)
+                    ),
                 }
-                try:
-                    options[CONF_SCAN_INTERVAL] = max(
-                        0, int(user_input.get(CONF_SCAN_INTERVAL) or 0)
-                    )
-                except (TypeError, ValueError):
-                    options[CONF_SCAN_INTERVAL] = 0
                 self.hass.config_entries.async_update_entry(entry, options=options)
 
                 from . import apply_options, prune_removed_devices
@@ -300,11 +326,12 @@ class HuaweiFindOptionsFlow(OptionsFlow):
                 CONF_AMAP_KEY, default=current.get(CONF_AMAP_KEY, "")
             ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
             vol.Optional(
-                CONF_SCAN_INTERVAL, default=current.get(CONF_SCAN_INTERVAL, 0)
+                CONF_SCAN_INTERVAL,
+                default=current.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
             ): NumberSelector(
                 NumberSelectorConfig(
                     min=0,
-                    max=720,
+                    max=MAX_SCAN_INTERVAL,
                     step=1,
                     mode=NumberSelectorMode.BOX,
                     unit_of_measurement="min",

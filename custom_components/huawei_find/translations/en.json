@@ -10,9 +10,10 @@
       },
       "devices": {
         "title": "Devices",
-        "description": "Uncheck a device to stop tracking it; disabled devices keep no entities after saving.",
+        "description": "Uncheck a device to stop tracking it; disabled devices keep no entities after saving. The refresh interval defaults to 15 minutes (0 = disabled).",
         "data": {
-          "devices": "Devices"
+          "devices": "Devices",
+          "scan_interval": "Automatic refresh interval (minutes, 0 = disabled, default 15)"
         }
       },
       "reauth_confirm": {
@@ -49,7 +50,7 @@
         "data": {
           "geocode_provider": "Address provider",
           "amap_key": "AMap web service key (AMap only)",
-          "scan_interval": "Automatic refresh interval (minutes, 0 = disabled)"
+          "scan_interval": "Automatic refresh interval (minutes, 0 = disabled, default 15)"
         }
       }
     }

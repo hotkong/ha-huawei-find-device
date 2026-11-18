@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from custom_components.huawei_find.coordinator import _async_locate_with_retry
+from custom_components.huawei_find.const import DEFAULT_SCAN_INTERVAL
 from custom_components.huawei_find.helpers import _interval_minutes
 from custom_components.huawei_find.api import (
     HuaweiFindAuthError,
@@ -53,8 +54,8 @@ class IntervalTests(unittest.TestCase):
     def test_values(self):
         self.assertEqual(_interval_minutes(15), 15)
         self.assertEqual(_interval_minutes("20"), 20)
-        self.assertEqual(_interval_minutes(None), 0)
-        self.assertEqual(_interval_minutes(""), 0)
+        self.assertEqual(_interval_minutes(None), DEFAULT_SCAN_INTERVAL)
+        self.assertEqual(_interval_minutes(""), DEFAULT_SCAN_INTERVAL)
         self.assertEqual(_interval_minutes("bad"), 0)
         self.assertEqual(_interval_minutes(-5), 0)
 

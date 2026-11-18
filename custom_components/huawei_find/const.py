@@ -17,6 +17,10 @@ CONF_GEOCODE_PROVIDER = "geocode_provider"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_AMAP_KEY = "amap_key"
 
+# Automatic location refresh: new entries start at 15 minutes (0 = disabled).
+DEFAULT_SCAN_INTERVAL = 15
+MAX_SCAN_INTERVAL = 720
+
 GEOCODE_NONE = "none"
 GEOCODE_AMAP = "amap"
 GEOCODE_OSM = "osm"

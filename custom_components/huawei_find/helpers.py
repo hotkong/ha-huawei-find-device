@@ -16,7 +16,13 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
 from .api import HuaweiFindClient
-from .const import CONF_COOKIE, DOMAIN, GEOCODE_NONE, MAX_CONCURRENT_LOCATES
+from .const import (
+    CONF_COOKIE,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    GEOCODE_NONE,
+    MAX_CONCURRENT_LOCATES,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -135,9 +141,16 @@ def _make_cookie_listener(
 
 
 def _interval_minutes(value: Any) -> int:
-    """Parse the scan_interval option defensively."""
+    """Parse the scan_interval option defensively.
+
+    A missing option means "not configured yet", which now defaults to
+    DEFAULT_SCAN_INTERVAL; an explicit 0 disables auto refresh, and an
+    unparsable value stays disabled instead of guessing.
+    """
+    if value is None or value == "":
+        return DEFAULT_SCAN_INTERVAL
     try:
-        return max(0, int(value or 0))
+        return max(0, int(value))
     except (TypeError, ValueError):
         _LOGGER.warning("Invalid scan_interval %r, auto refresh disabled", value)
         return 0

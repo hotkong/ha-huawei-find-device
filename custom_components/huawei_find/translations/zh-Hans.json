@@ -10,9 +10,10 @@
       },
       "devices": {
         "title": "设备",
-        "description": "取消勾选即可停止跟踪该设备；保存后被移除设备的实体与设备条目会自动清理。",
+        "description": "取消勾选即可停止跟踪该设备；保存后被移除设备的实体与设备条目会自动清理。自动刷新间隔默认 15 分钟，填 0 则关闭。",
         "data": {
-          "devices": "设备"
+          "devices": "设备",
+          "scan_interval": "自动刷新间隔（分钟，0 = 关闭，默认 15）"
         }
       },
       "reauth_confirm": {
@@ -49,7 +50,7 @@
         "data": {
           "geocode_provider": "地址来源",
           "amap_key": "高德 Web 服务 Key（仅高德需要）",
-          "scan_interval": "自动刷新间隔（分钟，0 = 关闭）"
+          "scan_interval": "自动刷新间隔（分钟，0 = 关闭，默认 15）"
         }
       }
     }
