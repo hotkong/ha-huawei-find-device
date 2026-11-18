@@ -294,8 +294,11 @@ def enabled_device_ids(hass: HomeAssistant, runtime: HuaweiFindRuntime) -> list[
     entity_reg = er.async_get(hass)
     active: list[str] = []
     for device_id in runtime.devices:
-        device = device_reg.async_get_device(
-            identifiers=device_identifiers(runtime.entry.entry_id, device_id)
+        # Identifiers are unique within a config entry, so the per-entry lookup
+        # is unambiguous (async_get_device is deprecated for multi-entry lookups).
+        device = device_reg.async_get_device_by_identifier(
+            next(iter(device_identifiers(runtime.entry.entry_id, device_id))),
+            runtime.entry.entry_id,
         )
         if device is None:
             active.append(device_id)
