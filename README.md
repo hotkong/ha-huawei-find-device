@@ -3,11 +3,11 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-把华为云空间「查找设备」接入 Home Assistant：**点一个按钮，让手机立刻上报一次位置**，
+把华为云空间「查找设备」接入 Home Assistant：**点一个按钮，让设备立刻上报一次位置、电量与状态**，
 找回手机时还能让它响铃。
 
-Trigger a Huawei Cloud *Find Device* query from Home Assistant — refresh the location on
-demand, or make the phone ring.
+Trigger a Huawei Cloud *Find Device* query from Home Assistant — refresh a device's location,
+battery and status on demand, or make the phone ring.
 
 > 非官方集成，依赖华为云网页版，接口调整可能导致失效。请仅用于自己或已授权的家人设备。  
 > Unofficial integration built on the Huawei Cloud web portal. It may break if Huawei
@@ -131,7 +131,7 @@ conditions:
 actions:
   - action: button.press
     target:
-      entity_id: button.huawei_cloud_find_device_refresh_all
+      entity_id: button.huawei_cloud_find_device_refresh_all_device_info
 mode: single
 ```
 
@@ -199,10 +199,10 @@ resulting position.
 
 **Location and tracking**
 
-- One "refresh all" button plus a per-device "refresh location" button (own and shared devices);
+- One "refresh all device info" button plus a per-device "refresh device info" button (own and shared devices);
 - Address sensor (coordinates only when no address source is configured);
 - GPS `device_tracker` per device, ready to attach to a `person`;
-- Separate battery, charging and last-locate-status entities;
+- Separate battery, charging and last-locate-status entities; earbuds report left bud, right bud and charging case batteries separately, plus a lowest-battery aggregate;
 - Failed lookups keep the last known position (marked stale), and results survive restarts;
 - Devices disabled in the UI are skipped automatically;
 - Tracked devices can be added or removed later from the Options page, with entities and device entries cleaned up.
@@ -218,7 +218,7 @@ resulting position.
 - Address lookup with automatic fallback (Huawei → AMap → OSM); switching sources re-resolves
   known coordinates immediately without waking the phone;
 - Option changes apply instantly, no restart or reload;
-- Session status visible on the "refresh all" button, with a re-auth notification when it expires;
+- Session status visible on the "refresh all device info" button, with a re-auth notification when it expires;
 - Repeated lookups of the same position are not re-resolved.
 
 **Multiple accounts**
@@ -239,7 +239,7 @@ it into the integration setup, then pick the devices to track. Repeat for a seco
 
 ### Entities
 
-`button.*_refresh_all`, `button.*_refresh`, `button.*_ring`, `sensor.*_last_location`,
+`button.*_refresh_all_device_info`, `button.*_refresh_device_info` (older installs keep `_refresh_all_locations` / `_refresh_location`), `button.*_ring`, `sensor.*_last_location`,
 `sensor.*_battery`, `binary_sensor.*_charging` (phones only), `sensor.*_last_locate_status`,
 `device_tracker.*`, plus the `huawei_find.refresh` and `huawei_find.set_cookie` services.
 
