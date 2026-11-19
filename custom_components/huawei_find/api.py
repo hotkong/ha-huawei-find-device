@@ -26,6 +26,7 @@ from typing import Any
 import aiohttp
 
 from .const import (
+    BATTERY_STALE_SECONDS,
     EP_BELL,
     HW_MODEL,
     BASE_URL,
@@ -191,8 +192,112 @@ def _coords_to_wgs84(candidate: dict[str, Any]) -> tuple[float | None, float | N
     return wlng, wlat, "gcj02"
 
 
-def _parse_locate_info(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Extract WGS-84 coordinates, battery and accuracy from queryLocateResult."""
+COMPONENT_MAIN = "main"
+COMPONENT_CASE = "case"
+COMPONENT_LEFT = "left"
+COMPONENT_RIGHT = "right"
+
+# Earbuds report one cptLocateInfoList entry per part; the portal itself labels
+# them "充电盒 FID / 左耳机 FID / 右耳机 FID" (findPhoneTws0/1/2).
+_EARBUD_COMPONENTS = {
+    "0": COMPONENT_CASE,
+    "1": COMPONENT_LEFT,
+    "2": COMPONENT_RIGHT,
+}
+
+
+def component_name(cpt_list: Any, per_device_type: Any = None) -> str:
+    """Map one cptLocateInfoList entry to a stable component name.
+
+    Only earbuds (per_device_type "1") report several parts. Phones have no
+    components; watches/bands report a single "0" entry that is the whole
+    device. Shared devices are phones and are treated as "main" as well.
+    """
+    if str(per_device_type or "") == "1":
+        key = str(cpt_list or "")
+        return _EARBUD_COMPONENTS.get(key, f"component_{key or 'unknown'}")
+    return COMPONENT_MAIN
+
+
+def components_from_locate_result(
+    locate_result: Any, per_device_type: Any = None
+) -> list[str]:
+    """Component names a device has already reported (used to build entities)."""
+    if not isinstance(locate_result, dict):
+        return []
+    names: list[str] = []
+    for entry in locate_result.get("cptLocateInfoList") or []:
+        name = component_name(_json_dict(entry).get("cptList"), per_device_type)
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def aggregate_battery(batteries: dict[str, Any] | None) -> int | None:
+    """Lowest reported percentage (the value a low-battery automation needs)."""
+    values = [
+        item.get("percentage")
+        for item in (batteries or {}).values()
+        if isinstance(item, dict) and item.get("percentage") is not None
+    ]
+    return min(values) if values else None
+
+
+def _epoch_seconds(timestamp: Any) -> float | None:
+    """Accept epoch seconds or milliseconds and return seconds."""
+    value = _as_float(timestamp)
+    if value is None or value <= 0:
+        return None
+    if value > 1e11:  # milliseconds since epoch (what Huawei sends)
+        value /= 1000
+    return value
+
+
+def _timestamp_iso(timestamp: Any) -> str | None:
+    seconds = _epoch_seconds(timestamp)
+    if seconds is None:
+        return None
+    try:
+        return datetime.fromtimestamp(seconds, timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _normalize_timestamp(value: Any) -> str | None:
+    """ISO-8601 for epoch timestamps; otherwise keep the vendor string as-is."""
+    if value in (None, ""):
+        return None
+    return _timestamp_iso(value) or str(value)
+
+
+def _component_battery(
+    status: dict[str, Any],
+    reported_at: Any,
+    connect_type: Any,
+    result_stale: bool,
+) -> dict[str, Any]:
+    """One component's battery reading plus how trustworthy it is."""
+    percentage = _as_float(status.get("percentage"))
+    if percentage is not None and not 0 <= percentage <= 100:
+        percentage = None
+    charging = status.get("isCharging")
+    seconds = _epoch_seconds(reported_at)
+    stale = bool(result_stale)
+    if seconds is not None:
+        stale = stale or (time.time() - seconds) > BATTERY_STALE_SECONDS
+    return {
+        "percentage": int(percentage) if percentage is not None else None,
+        "charging": str(charging) == "1" if charging not in (None, "") else None,
+        "reported_at": _timestamp_iso(reported_at),
+        "connect_type": connect_type,
+        "stale": stale,
+    }
+
+
+def _parse_locate_info(
+    payload: dict[str, Any], per_device_type: Any = None
+) -> dict[str, Any] | None:
+    """Extract WGS-84 coordinates, per-component batteries and accuracy."""
     locate_info = _json_dict(payload.get("locateInfo"))
     coord = _json_dict(locate_info.get("coordinateInfo"))
 
@@ -221,7 +326,7 @@ def _parse_locate_info(payload: dict[str, Any]) -> dict[str, Any] | None:
         coord_sys = "bd09"
 
     if lat is None or lng is None:
-        # Watches/bands return the result in cptLocateInfoList instead.
+        # Watches/bands/earbuds return the result in cptLocateInfoList instead.
         candidates: list[tuple[dict[str, Any], dict[str, Any]]] = []
         for entry in payload.get("cptLocateInfoList") or []:
             entry_dict = _json_dict(entry)
@@ -238,7 +343,6 @@ def _parse_locate_info(payload: dict[str, Any]) -> dict[str, Any] | None:
             lng, lat, coord_sys = _coords_to_wgs84(candidate)
             accuracy = candidate.get("accuracy")
             device_time = candidate.get("time")
-            battery_status = _json_dict(entry_dict.get("batteryStatus")) or battery_status
 
     if lat is None or lng is None:
         return None
@@ -256,24 +360,58 @@ def _parse_locate_info(payload: dict[str, Any]) -> dict[str, Any] | None:
             or locate_info.get("updateTime")
         )
 
-    battery = locate_info.get("battery")
-    if battery in (None, "", 0, "0"):
-        battery = battery_status.get("percentage")
-    battery_f = _as_float(battery)
+    # --- batteries: phones report one value, wearables/earbuds per component.
+    execute_time = payload.get("executeTime") or locate_info.get("executeTime")
+    exe_result = str(payload.get("exeResult") or "")
+    # "900" means the cloud is replaying a cached result (device offline).
+    result_stale = exe_result not in ("", "0")
+
+    batteries: dict[str, dict[str, Any]] = {}
+    for entry in payload.get("cptLocateInfoList") or []:
+        entry_dict = _json_dict(entry)
+        name = component_name(entry_dict.get("cptList"), per_device_type)
+        if name in batteries:
+            continue
+        reported_at = execute_time
+        for raw in entry_dict.get("coordinateInfoList") or []:
+            stamp = _json_dict(raw).get("time")
+            if _epoch_seconds(stamp) is not None:
+                reported_at = stamp
+                break
+        batteries[name] = _component_battery(
+            _json_dict(entry_dict.get("batteryStatus")),
+            reported_at,
+            entry_dict.get("connectType"),
+            result_stale,
+        )
+    if not batteries:
+        batteries[COMPONENT_MAIN] = _component_battery(
+            battery_status, execute_time, None, result_stale
+        )
+
+    battery_f = _as_float(locate_info.get("battery"))
+    if not battery_f:
+        battery_f = _as_float(aggregate_battery(batteries))
     charging = battery_status.get("isCharging")
-    charging = str(charging) == "1" if charging is not None else None
+    charging = str(charging) == "1" if charging not in (None, "") else None
 
     return {
         "latitude": round(lat, 6),
         "longitude": round(lng, 6),
         "accuracy": _as_float(accuracy),
         "battery": int(battery_f) if battery_f is not None else None,
+        "batteries": batteries,
+        "battery_stale": bool(
+            result_stale or any(item["stale"] for item in batteries.values())
+        ),
         "battery_charging": charging,
+        "result_stale": result_stale,
+        "result_time": _timestamp_iso(execute_time),
         "screen_locked": str(locate_info.get("isLockScreen")) == "1"
         if locate_info.get("isLockScreen") is not None
         else None,
         "coordinate_system": coord_sys,
-        "device_time": str(device_time) if device_time is not None else None,
+        "device_time": _normalize_timestamp(device_time),
         "located_at": datetime.now(timezone.utc),
     }
 
@@ -498,6 +636,10 @@ class HuaweiFindClient:
                     "model": raw.get("model") or raw.get("deviceTypeName") or "",
                     "device_type": raw.get("deviceType") or 9,
                     "per_device_type": str(raw.get("perDeviceType") or ""),
+                    "components": components_from_locate_result(
+                        raw.get("locateResult"), raw.get("perDeviceType")
+                    ),
+                    "capability": list(raw.get("capability") or []),
                     "is_shared": False,
                     "sender_user_id": "",
                 }
@@ -631,7 +773,7 @@ class HuaweiFindClient:
             data = await self.async_query(device, sequence)
             code = data.get("_code", -1)
             if code in (0, 1):
-                parsed = _parse_locate_info(data)
+                parsed = _parse_locate_info(data, device.get("per_device_type"))
                 if parsed is not None:
                     parsed["status"] = "ok"
                     return parsed

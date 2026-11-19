@@ -27,7 +27,7 @@ demand, or make the phone ring.
 
 **定位与追踪**
 
-- 一个「全部刷新」按钮 + 每台设备一个「刷新定位」按钮，自有设备和家人共享设备都支持；
+- 一个「刷新全部设备信息」按钮 + 每台设备一个「刷新设备信息」按钮，自有设备和家人共享设备都支持；
 - 定位传感器显示地址；配置了地址源后不再显示经纬度，反查失败时显示「地址解析失败」，坐标仍保留在属性里；
 - 每台设备一个 GPS 追踪器，可绑定到 `person`，在原生地图显示；
 - 电量、充电状态、上次定位状态各自独立成实体；
@@ -45,7 +45,7 @@ demand, or make the phone ring.
 - 自动刷新间隔（新添加的账号默认 15 分钟），到点查询全部设备；
 - 地址反查支持多种来源，默认自动降级（华为 → 高德 → OSM）；切换来源后已有坐标立即重新解析，不会唤醒手机；
 - 所有选项修改后立即生效，不需要重启或重载集成；
-- 会话状态可在「全部刷新」按钮属性里查看，失效时会弹通知引导重新授权；
+- 会话状态可在「刷新全部设备信息」按钮属性里查看，失效时会弹通知引导重新授权；
 - 同一位置短时间内不会重复做地址反查。
 
 **多账号**
@@ -84,20 +84,23 @@ demand, or make the phone ring.
 
 | 实体 | 说明 |
 |---|---|
-| `button.<account>_refresh_all` | 刷新全部定位（跳过已禁用设备） |
-| `button.<device>_refresh` | 单台设备刷新定位 |
+| `button.<account>_refresh_all_device_info` | 刷新全部设备信息（跳过已禁用设备；老装置仍为 `_refresh_all_locations`） |
+| `button.<device>_refresh_device_info` | 单台设备刷新设备信息（老装置仍为 `_refresh_location`） |
 | `button.<device>_ring` | 让设备响铃（仅自有设备、30 秒冷却、需设备在线） |
 | `sensor.<device>_last_location` | 状态 = 地址；未配置地址源时才是 `纬度, 经度` |
-| `sensor.<device>_battery` | 电量（诊断类） |
+| `sensor.<device>_battery` | 电量（诊断类）；耳机为“最低电量”，取各组件最低值 |
+| `sensor.<device>_left_earbud_battery` | 左耳电量（仅耳机；属性 `reported_at`、`stale`、`connect_type`） |
+| `sensor.<device>_right_earbud_battery` | 右耳电量（仅耳机） |
+| `sensor.<device>_charging_case_battery` | 充电盒电量（仅耳机且设备上报过充电盒；未上报时为 `unknown`） |
 | `binary_sensor.<device>_charging` | 充电状态（仅手机；手表/手环无此实体） |
 | `sensor.<device>_last_locate_status` | 上次定位状态：成功 / 过期 / 未知（诊断类） |
 | `device_tracker.<device>` | GPS 追踪器，可绑定 `person` |
-| 服务 `huawei_find.refresh` | 同「全部刷新」，等全部设备查完才返回 |
+| 服务 `huawei_find.refresh` | 同「刷新全部设备信息」，等全部设备查完才返回 |
 | 服务 `huawei_find.set_cookie` | 直接更新会话 Cookie，无需操作界面（多账号时需指定目标账号） |
 
-「全部刷新」按钮的属性：设备数、启用中的设备数、正在刷新的设备、各设备最近状态、当前 Cookie 已使用天数、最近一次会话保活是否成功及时间、累计保活失败次数。
+「刷新全部设备信息」按钮的属性：设备数、启用中的设备数、正在刷新的设备、各设备最近状态、当前 Cookie 已使用天数、最近一次会话保活是否成功及时间、累计保活失败次数。
 
-定位传感器的属性：`latitude`、`longitude`、`accuracy`、`coordinate_system`、`address`、`address_stale`、`device_time`、`located_at`、`last_attempt`、`status`、`last_error`。
+定位传感器的属性：`latitude`、`longitude`、`accuracy`、`coordinate_system`、`address`、`address_stale`、`device_time`、`result_time`、`result_stale`、`located_at`、`last_attempt`、`status`、`last_error`。电池属性里的 `reported_at`/`stale` 用来判断电量是否为云端缓存的旧值（`exeResult=900` 或超过 6 小时）。
 
 ### 配置项
 
@@ -138,7 +141,7 @@ mode: single
 
 ### 禁用 vs 隐藏
 
-- **禁用**设备/实体：不再加载，且「全部刷新」会跳过它，不产生请求；
+- **禁用**设备/实体：不再加载，且「刷新全部设备信息」会跳过它，不产生请求；
 - **隐藏**：只是不在仪表盘显示，仍然正常刷新。
 
 ### 多账号
@@ -155,7 +158,7 @@ mode: single
 
 - 华为云会话会过期，**具体期限不固定**，取决于华为侧的策略和你的使用频率；
 - 集成会自动保持会话活跃，并在失效时弹通知，点「重新验证」粘贴新 Cookie 即可；
-- 「全部刷新」按钮的属性可以看到会话是否正常、已经使用了多少天；
+- 「刷新全部设备信息」按钮的属性可以看到会话是否正常、已经使用了多少天；
 - Cookie 使用较长时间后会提醒你提前更新；
 - 也可以用 `huawei_find.set_cookie` 服务直接更新，不必进入界面。
 

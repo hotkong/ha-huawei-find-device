@@ -21,6 +21,7 @@ from .api import (
     HuaweiFindAuthError,
     HuaweiFindDeviceError,
     HuaweiFindError,
+    aggregate_battery,
 )
 from .const import (
     ADDRESS_KEEP_RADIUS,
@@ -77,11 +78,38 @@ def _distance_m(
     return 2 * radius * math.asin(math.sqrt(a))
 
 
+def _merge_batteries(
+    previous: dict[str, Any], result: dict[str, Any]
+) -> tuple[dict[str, Any], bool]:
+    """Keep last known values for components the new payload did not report."""
+    merged = {
+        name: dict(item)
+        for name, item in (result.get("batteries") or {}).items()
+        if isinstance(item, dict)
+    }
+    inherited = False
+    for name, item in (previous.get("batteries") or {}).items():
+        if not isinstance(item, dict):
+            continue
+        current = merged.get(name)
+        if current is None:
+            merged[name] = {**item, "stale": True}
+            inherited = True
+        elif current.get("percentage") is None and item.get("percentage") is not None:
+            # Component exists but did not report a value this time
+            merged[name] = {**item, "stale": True}
+            inherited = True
+    return merged, inherited
+
+
 def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     """Keep the last known position when a refresh fails."""
     merged = dict(result)
     merged["last_attempt"] = dt_util.utcnow()
     if result.get("status") == "ok":
+        merged["batteries"], inherited_battery = _merge_batteries(previous, result)
+        merged["battery"] = aggregate_battery(merged["batteries"])
+        merged["battery_stale"] = bool(result.get("battery_stale")) or inherited_battery
         merged["stale"] = False
         # Reverse geocoding can fail transiently; keep the previous address
         # as long as the device has not moved significantly.
@@ -111,7 +139,11 @@ def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str,
             "longitude",
             "accuracy",
             "battery",
+            "batteries",
+            "battery_stale",
             "battery_charging",
+            "result_stale",
+            "result_time",
             "screen_locked",
             "coordinate_system",
             "device_time",
@@ -122,6 +154,14 @@ def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str,
                 merged[key] = previous[key]
                 if key == "address":
                     kept_address = True
+        if merged.get("batteries"):
+            merged["batteries"] = {
+                name: {**item, "stale": True}
+                for name, item in merged["batteries"].items()
+                if isinstance(item, dict)
+            }
+            merged["battery"] = aggregate_battery(merged["batteries"])
+            merged["battery_stale"] = True
         merged["stale"] = True
         if kept_address:
             # The address is inherited, not freshly resolved

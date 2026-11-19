@@ -50,6 +50,18 @@ def supports_charging(device: dict[str, Any]) -> bool:
     return per_type not in {"1", "2"}
 
 
+def battery_components(device: dict[str, Any]) -> tuple[str, ...]:
+    """Battery entities to create for a device (earbuds report per component)."""
+    if str(device.get("per_device_type") or "") != "1":
+        return ()
+    known = {str(name) for name in (device.get("components") or [])}
+    components = tuple(name for name in ("case", "left", "right") if name in known)
+    if components:
+        return components
+    # No cached locate result at setup: TWS devices always have both buds.
+    return ("left", "right")
+
+
 def signal_account(entry_id: str) -> str:
     """Dispatcher signal for account-level state (hub button)."""
     return f"{DOMAIN}_account_{entry_id}"

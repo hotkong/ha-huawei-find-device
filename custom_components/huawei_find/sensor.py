@@ -27,6 +27,7 @@ from .const import (
     ATTR_STATUS,
     DOMAIN,
 )
+from .helpers import battery_components
 
 
 async def async_setup_entry(
@@ -40,6 +41,8 @@ async def async_setup_entry(
         entities.append(HuaweiLocationSensor(runtime, device))
         entities.append(HuaweiBatterySensor(runtime, device))
         entities.append(HuaweiPositionStatusSensor(runtime, device))
+        for component in battery_components(device):
+            entities.append(HuaweiComponentBatterySensor(runtime, device, component))
     async_add_entities(entities)
 
 
@@ -139,6 +142,10 @@ class HuaweiLocationSensor(SensorEntity):
         if result.get("address"):
             attrs[ATTR_ADDRESS] = result["address"]
             attrs["address_stale"] = result.get("address_stale", False)
+        if result.get("result_stale") is not None:
+            attrs["result_stale"] = bool(result.get("result_stale"))
+        if result.get("result_time"):
+            attrs["result_time"] = result["result_time"]
         if result.get("last_error"):
             attrs[ATTR_ERROR] = result["last_error"]
         return attrs
@@ -159,7 +166,35 @@ class HuaweiBatterySensor(SensorEntity):
         self._runtime = runtime
         self._device = device
         self._attr_unique_id = f"{DOMAIN}_{runtime.entry.entry_id}_{device['id']}_battery"
-        self._attr_native_value = self._value_from(runtime.results.get(device["id"], {}))
+        cached = runtime.results.get(device["id"], {})
+        self._attr_native_value = self._value_from(cached)
+        if str(device.get("per_device_type") or "") == "1":
+            # Earbuds: this is the lowest of the per-part values (see 05 docs).
+            self._attr_translation_key = "battery_lowest"
+        self._attr_extra_state_attributes = self._build_attributes(cached)
+
+    @staticmethod
+    def _build_attributes(result: dict) -> dict:
+        batteries = result.get("batteries") or {}
+        attrs: dict = {
+            "components": {
+                name: item.get("percentage")
+                for name, item in batteries.items()
+                if isinstance(item, dict)
+            }
+        }
+        if len(attrs["components"]) > 1:
+            attrs["aggregate"] = "min"
+        reported = [
+            item.get("reported_at")
+            for item in batteries.values()
+            if isinstance(item, dict) and item.get("reported_at")
+        ]
+        if reported:
+            attrs["reported_at"] = max(reported)
+        if result.get("battery_stale") is not None:
+            attrs["stale"] = bool(result.get("battery_stale"))
+        return attrs
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -193,6 +228,80 @@ class HuaweiBatterySensor(SensorEntity):
         value = self._value_from(result)
         if value is not None:
             self._attr_native_value = value
+        self._attr_extra_state_attributes = self._build_attributes(result)
+        self.async_write_ha_state()
+
+
+class HuaweiComponentBatterySensor(SensorEntity):
+    """Battery of one earbud part (charging case / left bud / right bud)."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_value: int | None = None
+
+    def __init__(
+        self, runtime: HuaweiFindRuntime, device: dict, component: str
+    ) -> None:
+        self._runtime = runtime
+        self._device = device
+        self._component = component
+        self._attr_translation_key = f"battery_{component}"
+        self._attr_unique_id = (
+            f"{DOMAIN}_{runtime.entry.entry_id}_{device['id']}_battery_{component}"
+        )
+        cached = runtime.results.get(device["id"], {})
+        self._attr_native_value = self._value_from(cached)
+        self._attr_extra_state_attributes = self._build_attributes(cached)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
+            name=self._device.get("name") or "Huawei device",
+            manufacturer="Huawei",
+            model=self._device.get("model") or None,
+        )
+
+    def _component_result(self, result: dict) -> dict:
+        batteries = result.get("batteries") or {}
+        item = batteries.get(self._component)
+        return item if isinstance(item, dict) else {}
+
+    def _value_from(self, result: dict) -> int | None:
+        value = self._component_result(result).get("percentage")
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _build_attributes(self, result: dict) -> dict:
+        item = self._component_result(result)
+        attrs: dict = {}
+        if item.get("reported_at"):
+            attrs["reported_at"] = item["reported_at"]
+        if item.get("stale") is not None:
+            attrs["stale"] = bool(item.get("stale"))
+        if item.get("connect_type") is not None:
+            attrs["connect_type"] = item.get("connect_type")
+        return attrs
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_update(self._runtime.entry.entry_id, self._device["id"]),
+                self._handle_update,
+            )
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        result = self._runtime.results.get(self._device["id"], {})
+        self._attr_native_value = self._value_from(result)
+        self._attr_extra_state_attributes = self._build_attributes(result)
         self.async_write_ha_state()
 
 

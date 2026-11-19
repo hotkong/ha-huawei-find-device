@@ -5,8 +5,10 @@ from types import SimpleNamespace
 
 from custom_components.huawei_find import HuaweiFindRuntime
 from custom_components.huawei_find.binary_sensor import HuaweiChargingSensor
+from custom_components.huawei_find.helpers import battery_components
 from custom_components.huawei_find.sensor import (
     HuaweiBatterySensor,
+    HuaweiComponentBatterySensor,
     HuaweiLocationSensor,
     HuaweiPositionStatusSensor,
 )
@@ -15,6 +17,15 @@ DEVICE = {
     "id": "abc123",
     "name": "Test Phone",
     "model": "HUAWEI Test",
+    "is_shared": False,
+}
+
+EARBUDS = {
+    "id": "abc123",
+    "name": "Test Buds",
+    "model": "HUAWEI FreeBuds",
+    "per_device_type": "1",
+    "components": ["case", "left", "right"],
     "is_shared": False,
 }
 
@@ -110,6 +121,81 @@ class EntityConstructionTests(unittest.TestCase):
         ):
             entity = cls(runtime, DEVICE)
             self.assertIsNotNone(entity.unique_id)
+
+
+EARBUD_RESULT = {
+    "status": "ok",
+    "latitude": 31.42,
+    "longitude": 120.44,
+    "battery": 57,
+    "battery_stale": True,
+    "batteries": {
+        "case": {"percentage": None, "stale": True, "reported_at": None},
+        "left": {
+            "percentage": 57,
+            "stale": True,
+            "reported_at": "2026-11-09T11:49:19+00:00",
+            "connect_type": -1,
+        },
+        "right": {
+            "percentage": 63,
+            "stale": True,
+            "reported_at": "2026-11-09T11:49:19+00:00",
+            "connect_type": -1,
+        },
+    },
+}
+
+
+class EarbudEntityTests(unittest.TestCase):
+    def _runtime(self):
+        return FakeRuntime({EARBUDS["id"]: EARBUD_RESULT})
+
+    def test_each_component_has_its_own_sensor(self):
+        runtime = self._runtime()
+        left = HuaweiComponentBatterySensor(runtime, EARBUDS, "left")
+        right = HuaweiComponentBatterySensor(runtime, EARBUDS, "right")
+        case = HuaweiComponentBatterySensor(runtime, EARBUDS, "case")
+        self.assertEqual(left.native_value, 57)
+        self.assertEqual(right.native_value, 63)
+        self.assertIsNone(case.native_value)
+        self.assertEqual(left.translation_key, "battery_left")
+
+    def test_component_attributes_expose_freshness(self):
+        entity = HuaweiComponentBatterySensor(self._runtime(), EARBUDS, "left")
+        self.assertEqual(
+            entity.extra_state_attributes["reported_at"],
+            "2026-11-09T11:49:19+00:00",
+        )
+        self.assertTrue(entity.extra_state_attributes["stale"])
+
+    def test_aggregate_entity_is_lowest_and_keeps_legacy_unique_id(self):
+        entity = HuaweiBatterySensor(self._runtime(), EARBUDS)
+        self.assertEqual(entity.native_value, 57)
+        self.assertEqual(entity.translation_key, "battery_lowest")
+        self.assertTrue(entity.unique_id.endswith("_battery"))
+        attributes = entity.extra_state_attributes
+        self.assertEqual(attributes["aggregate"], "min")
+        self.assertEqual(attributes["components"], {"case": None, "left": 57, "right": 63})
+        self.assertTrue(attributes["stale"])
+
+    def test_phone_battery_keeps_plain_translation_key(self):
+        entity = HuaweiBatterySensor(FakeRuntime({DEVICE["id"]: RESULT}), DEVICE)
+        self.assertEqual(entity.translation_key, "battery")
+
+
+class BatteryComponentSelectionTests(unittest.TestCase):
+    def test_earbuds_report_component_entities(self):
+        self.assertEqual(battery_components(EARBUDS), ("case", "left", "right"))
+
+    def test_earbuds_without_cached_components_fall_back_to_buds(self):
+        device = dict(EARBUDS)
+        device["components"] = []
+        self.assertEqual(battery_components(device), ("left", "right"))
+
+    def test_phones_and_watches_have_no_component_sensors(self):
+        self.assertEqual(battery_components(DEVICE), ())
+        self.assertEqual(battery_components({"per_device_type": "2"}), ())
 
 
 if __name__ == "__main__":

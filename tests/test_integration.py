@@ -158,5 +158,82 @@ class MergeResultTests(unittest.TestCase):
         self.assertFalse(merged["stale"])
 
 
+class BatteryMergeTests(unittest.TestCase):
+    def _previous(self):
+        return {
+            "status": "ok",
+            "latitude": 31.4,
+            "longitude": 120.4,
+            "battery": 57,
+            "batteries": {
+                "left": {"percentage": 57, "stale": False},
+                "right": {"percentage": 63, "stale": False},
+                "case": {"percentage": None, "stale": False},
+            },
+        }
+
+    def test_component_missing_from_new_payload_is_inherited_and_stale(self):
+        merged = _merge_result(
+            self._previous(),
+            {
+                "status": "ok",
+                "latitude": 31.4,
+                "longitude": 120.4,
+                "batteries": {"left": {"percentage": 50, "stale": False}},
+                "battery": 50,
+                "battery_stale": False,
+            },
+        )
+        self.assertEqual(merged["batteries"]["left"]["percentage"], 50)
+        self.assertEqual(merged["batteries"]["right"]["percentage"], 63)
+        self.assertTrue(merged["batteries"]["right"]["stale"])
+        self.assertEqual(merged["battery"], 50)
+        self.assertTrue(merged["battery_stale"])
+
+    def test_empty_component_keeps_last_known_value(self):
+        merged = _merge_result(
+            self._previous(),
+            {
+                "status": "ok",
+                "latitude": 31.4,
+                "longitude": 120.4,
+                "batteries": {
+                    "left": {"percentage": 50, "stale": False},
+                    "right": {"percentage": None, "stale": False},
+                },
+            },
+        )
+        self.assertEqual(merged["batteries"]["right"]["percentage"], 63)
+        self.assertTrue(merged["batteries"]["right"]["stale"])
+
+    def test_failure_marks_every_component_stale(self):
+        merged = _merge_result(
+            self._previous(), {"status": "error", "last_error": "offline"}
+        )
+        self.assertEqual(merged["batteries"]["left"]["percentage"], 57)
+        self.assertTrue(all(item["stale"] for item in merged["batteries"].values()))
+        self.assertTrue(merged["battery_stale"])
+
+    def test_phone_merge_keeps_single_main_battery(self):
+        previous = {
+            "status": "ok",
+            "latitude": 31.4,
+            "longitude": 120.4,
+            "battery": 76,
+            "batteries": {"main": {"percentage": 76, "stale": False}},
+        }
+        merged = _merge_result(
+            previous,
+            {
+                "status": "ok",
+                "latitude": 31.4,
+                "longitude": 120.4,
+                "batteries": {"main": {"percentage": 70, "stale": False}},
+            },
+        )
+        self.assertEqual(merged["battery"], 70)
+        self.assertFalse(merged["battery_stale"])
+
+
 if __name__ == "__main__":
     unittest.main()

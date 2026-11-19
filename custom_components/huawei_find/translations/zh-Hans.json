@@ -58,10 +58,10 @@
   "entity": {
     "button": {
       "refresh_all": {
-        "name": "刷新全部定位"
+        "name": "刷新全部设备信息"
       },
       "refresh": {
-        "name": "刷新定位"
+        "name": "刷新设备信息"
       },
       "ring": {
         "name": "响铃"
@@ -73,6 +73,18 @@
       },
       "battery": {
         "name": "电池电量"
+      },
+      "battery_lowest": {
+        "name": "最低电量"
+      },
+      "battery_case": {
+        "name": "充电盒电量"
+      },
+      "battery_left": {
+        "name": "左耳电量"
+      },
+      "battery_right": {
+        "name": "右耳电量"
       },
       "position_status": {
         "name": "上次定位状态",
@@ -91,8 +103,8 @@
   },
   "services": {
     "refresh": {
-      "name": "刷新定位",
-      "description": "让华为云查询一次账号下全部设备的位置。",
+      "name": "刷新设备信息",
+      "description": "让华为云刷新账号下全部设备的信息（位置、电量、锁屏、地址）。",
       "fields": {}
     },
     "set_cookie": {

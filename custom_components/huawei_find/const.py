@@ -80,3 +80,7 @@ ADDRESS_KEEP_RADIUS = 300  # meters
 # Maximum time to wait for a locate result (seconds) and polling interval.
 LOCATE_TIMEOUT = 30
 POLL_INTERVAL = 2.0
+
+# A battery reading older than this is flagged as stale (earbuds/watches return
+# the cloud's last known value when they are offline).
+BATTERY_STALE_SECONDS = 6 * 3600

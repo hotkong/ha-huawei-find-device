@@ -58,10 +58,10 @@
   "entity": {
     "button": {
       "refresh_all": {
-        "name": "Refresh all locations"
+        "name": "Refresh all device info"
       },
       "refresh": {
-        "name": "Refresh location"
+        "name": "Refresh device info"
       },
       "ring": {
         "name": "Ring device"
@@ -73,6 +73,18 @@
       },
       "battery": {
         "name": "Battery"
+      },
+      "battery_lowest": {
+        "name": "Lowest battery"
+      },
+      "battery_case": {
+        "name": "Charging case battery"
+      },
+      "battery_left": {
+        "name": "Left earbud battery"
+      },
+      "battery_right": {
+        "name": "Right earbud battery"
       },
       "position_status": {
         "name": "Last locate status",
@@ -91,8 +103,8 @@
   },
   "services": {
     "refresh": {
-      "name": "Refresh location",
-      "description": "Ask Huawei Cloud to locate every device on the account.",
+      "name": "Refresh device info",
+      "description": "Refresh device info (location, battery, lock state, address) for every device on the account.",
       "fields": {}
     },
     "set_cookie": {
