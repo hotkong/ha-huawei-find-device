@@ -76,6 +76,11 @@ battery and status on demand, or make the phone ring.
 
 > 必须从请求头复制：浏览器控制台里的 `document.cookie` 拿不到登录态的完整信息。
 
+> **让 Cookie 更耐用的实测经验**：用**无痕窗口**打开 <https://cloud.huawei.com/> 登录并提取 Cookie，
+> **提取完尽快关闭无痕窗口**；之后不要在普通窗口再登录同一个华为账号，避免两边会话互相轮换、
+> 把 HA 里的 Cookie 顶掉。配合 10–20 分钟的自动刷新，Cookie 通常能稳定使用很久
+> （实测远超默认的 6 天提醒线）。关闭无痕窗口只是清掉本地 Cookie，不会主动登出服务端会话。
+
 需要第二个账号时，重复第 1–5 步即可（详见下文「多账号」）。
 
 ### 实体与属性
@@ -236,6 +241,12 @@ Requirements: Home Assistant 2024.6+, no extra dependencies.
 
 Copy the `Cookie` request header (DevTools → Network → any find-device request) and paste
 it into the integration setup, then pick the devices to track. Repeat for a second account.
+
+> **Tip for a longer-lived cookie (tested)**: sign in from a **private/incognito window**,
+> copy the `Cookie` header, then **close the incognito window right away**. Don't sign into
+> the same Huawei account in a normal window afterwards — the two sessions rotate each
+> other's cookies and can invalidate the one HA is using. With a 10–20 minute refresh
+> interval the cookie usually stays valid far beyond the 6-day reminder.
 
 ### Entities
 
