@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -65,6 +66,71 @@ COOKIE_SELECTOR = TextSelector(
 )
 STEP_USER_SCHEMA = vol.Schema({vol.Required(CONF_COOKIE): COOKIE_SELECTOR})
 
+# Matches a "Cookie:" request header (value may be followed by more headers).
+_COOKIE_HEADER_RE = re.compile(
+    r"cookie:\s*([^\r\n]+)", re.IGNORECASE
+)
+# Matches the -b/--cookie argument of a curl command. The value may be a
+# single token or a full "k=v; k=v" string, so allow spaces within quotes.
+_CURL_COOKIE_RE = re.compile(
+    r"""-b\s+(?:"([^"]+)"|'([^']+)'|(\S+))""", re.IGNORECASE
+)
+# Matches PowerShell's New-Object System.Net.Cookie("name", "value", ...) calls.
+_PS_COOKIE_RE = re.compile(
+    r"""New-Object\s+System\.Net\.Cookie\(\s*"?([A-Za-z0-9_]+)"?\s*,\s*"?([^",]*)""",
+)
+
+
+def _extract_cookie(text: str) -> str:
+    """Extract a Huawei Cloud cookie from pasted content.
+
+    Users often paste an entire ``locate`` request (devtools "Copy as cURL",
+    "Copy request headers", or a PowerShell snippet) rather than just the
+    Cookie header. Accept all of these and return the bare cookie string so
+    the flow can validate it, falling back to the raw text when it already
+    looks like a cookie.
+    """
+    # Windows curl escapes quotes as ^"; normalise before matching.
+    text = text.replace('^"', '"').replace('"^', '"').replace("\r\n", "\n")
+
+    # 1. A "Cookie:" request header.
+    match = _COOKIE_HEADER_RE.search(text)
+    if match and "HWWAFSESID" in match.group(1):
+        return match.group(1).strip()
+
+    # 2. curl -b cookie arguments. Huawei rotates tokens between requests,
+    #    so prefer the last one that still carries the session id.
+    for groups in reversed(_CURL_COOKIE_RE.findall(text)):
+        candidate = next((g for g in groups if g), "")
+        if "HWWAFSESID" in candidate:
+            return candidate.strip()
+
+    # 3. PowerShell Cookies.Add blocks, grouped per request; the last group
+    #    holds the freshest tokens.
+    pairs = _PS_COOKIE_RE.findall(text)
+    if pairs and any(name == "HWWAFSESID" for name, _ in pairs):
+        blocks: list[list[tuple[str, str]]] = []
+        current: list[tuple[str, str]] = []
+        for name, value in pairs:
+            if name == "HWWAFSESID" and current:
+                blocks.append(current)
+                current = []
+            current.append((name, value))
+        if current:
+            blocks.append(current)
+        return "; ".join(f"{name}={value}" for name, value in blocks[-1])
+
+    # 4. Already a bare cookie string.
+    if "HWWAFSESID=" in text and ";" in text:
+        for line in text.splitlines():
+            line = line.strip()
+            if line.lower().startswith("cookie:"):
+                line = line.split(":", 1)[1].strip()
+            if "HWWAFSESID=" in line and ";" in line:
+                return line
+
+    return ""
+
 
 class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     """Add a Huawei Cloud Find Device entry or re-authorize it."""
@@ -88,6 +154,9 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
+            extracted = _extract_cookie(cookie)
+            if extracted:
+                cookie = extracted
             try:
                 client = HuaweiFindClient(cookie)
             except HuaweiFindError:
@@ -195,6 +264,9 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
+            extracted = _extract_cookie(cookie)
+            if extracted:
+                cookie = extracted
             try:
                 client = HuaweiFindClient(cookie)
             except HuaweiFindError:
