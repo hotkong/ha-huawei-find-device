@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from homeassistant.components import persistent_notification
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -27,16 +27,33 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+@callback
+def abort_reauth_flows(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Abort pending reauth flows for one entry (e.g. after an automatic login)."""
+    flow_manager = getattr(hass.config_entries, "flow", None)
+    if flow_manager is None:
+        return
+    for flow in flow_manager.async_progress():
+        context = flow.get("context") or {}
+        if context.get("entry_id") != entry.entry_id:
+            continue
+        if context.get("source") != SOURCE_REAUTH:
+            continue
+        flow_manager.async_abort(flow["flow_id"])
+
+
 def device_identifiers(entry_id: str, device_id: str) -> set[tuple[str, str]]:
     """Device registry identifier, scoped per config entry (multi-account safe)."""
     return {(DOMAIN, f"{entry_id}:{device_id}")}
 
 
 def supports_ring(device: dict[str, Any]) -> bool:
-    """Own phones and wearables (watch/band) can be made to ring."""
+    """Own phones/wearables, plus devices that advertise the bell capability."""
     if device.get("is_shared"):
         return False
-    return str(device.get("per_device_type") or "") in {"0", "2"}
+    if str(device.get("per_device_type") or "") in {"0", "2"}:
+        return True
+    return "bell" in (device.get("capability") or [])
 
 
 def signal_update(entry_id: str, device_id: str) -> str:
@@ -51,15 +68,24 @@ def supports_charging(device: dict[str, Any]) -> bool:
 
 
 def battery_components(device: dict[str, Any]) -> tuple[str, ...]:
-    """Battery entities to create for a device (earbuds report per component)."""
-    if str(device.get("per_device_type") or "") != "1":
+    """Battery entities to create, driven by what the API says the device has."""
+    known = tuple(str(name) for name in (device.get("components") or []))
+    if known:
+        ordered = tuple(
+            name for name in ("case", "left", "right") if name in known
+        )
+        if ordered:
+            return ordered
+        if len(known) > 1:
+            return tuple(dict.fromkeys(known))
+        # A single "main" component is the device-level battery sensor.
         return ()
-    known = {str(name) for name in (device.get("components") or [])}
-    components = tuple(name for name in ("case", "left", "right") if name in known)
-    if components:
-        return components
-    # No cached locate result at setup: TWS devices always have both buds.
-    return ("left", "right")
+    # No cached locate result yet: fall back to the TWS hint from the API.
+    if "bell" in (device.get("capability") or []) or str(
+        device.get("per_device_type") or ""
+    ) == "1":
+        return ("left", "right")
+    return ()
 
 
 def signal_account(entry_id: str) -> str:
@@ -120,6 +146,14 @@ class HuaweiFindRuntime:
     save_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     auto_refresh_unsub: Callable[[], None] | None = None
     reauth_requested: bool = False
+    browser_url: str = ""
+    browser_token: str = ""
+    browser_username: str = ""
+    browser_password: str = ""
+    login_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    last_login_attempt: float = 0.0
+    last_login_success: Any = None
+    login_error: str | None = None
     heartbeat_ok: bool | None = None
     last_heartbeat: Any = None
     heartbeat_failures: int = 0
@@ -173,9 +207,23 @@ def _notify_reauth(hass: HomeAssistant, runtime: HuaweiFindRuntime, reason: str)
     if runtime.reauth_requested:
         return
     runtime.reauth_requested = True
+    has_fallback = bool(
+        runtime.browser_url
+        and runtime.browser_username
+        and runtime.browser_password
+    )
+    if runtime.login_error:
+        detail = f"\n\nAutomatic re-login failed: {runtime.login_error}"
+    elif not has_fallback:
+        detail = (
+            "\n\nNo automatic re-login is configured; "
+            "paste a fresh Cookie to restore the session."
+        )
+    else:
+        detail = ""
     persistent_notification.async_create(
         hass,
-        f"The Huawei Cloud session has expired ({reason}).\n\n"
+        f"The Huawei Cloud session has expired ({reason}).{detail}\n\n"
         "Go to Settings > Devices & Services > Huawei Cloud Find Device "
         "and click Re-authenticate, then log in to cloud.huawei.com again "
         "and paste the new Cookie.",

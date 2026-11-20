@@ -7,7 +7,8 @@ The web portal (cloud.huawei.com/webFindPhone.html) uses these endpoints:
     POST /findDevice/queryLocateResult     {device, sequence, ...}
 
 Authentication is the browser session cookie (must contain CSRFToken and
-USER_ID), so no browser and no Huawei account password are required.
+USER_ID). No browser or account password is needed by default; the optional
+browserless fallback is only used when the user configures it.
 """
 
 
@@ -77,6 +78,28 @@ def parse_cookie(raw: str) -> dict[str, str]:
         if key:
             cookies[key] = value.strip()
     return cookies
+
+
+def cookie_is_usable(raw: str) -> bool:
+    """A usable session cookie needs the session id plus CSRF/user identifiers."""
+    cookies = parse_cookie(raw)
+    lowered = {key.lower() for key in cookies}
+    has_session = "jsessionid" in lowered or "hwwafsesid" in lowered
+    has_csrf = any(name in lowered for name in ("csrftoken", "hicloud_csrf", "csrf_token"))
+    has_user = "user_id" in lowered or "userid" in lowered or "uid" in lowered
+    return has_session and has_csrf and has_user
+
+
+def cookie_user_id(raw: str) -> str:
+    """USER_ID (or alias) embedded in a cookie header, empty when absent."""
+    return _cookie_value(parse_cookie(raw), ("USER_ID", "userId", "uid"))
+
+
+def cookie_matches_entry(cookie: str, unique_id: str | None) -> bool:
+    """Guard multi-account setups: refuse a cookie that belongs to another account."""
+    expected = (unique_id or "").removeprefix("huawei_")
+    actual = cookie_user_id(cookie)
+    return not expected or actual == expected
 
 
 def _cookie_value(cookies: dict[str, str], names: tuple[str, ...]) -> str:
@@ -206,14 +229,20 @@ _EARBUD_COMPONENTS = {
 }
 
 
-def component_name(cpt_list: Any, per_device_type: Any = None) -> str:
+def component_name(
+    cpt_list: Any,
+    per_device_type: Any = None,
+    multi_component: bool | None = None,
+) -> str:
     """Map one cptLocateInfoList entry to a stable component name.
 
-    Only earbuds (per_device_type "1") report several parts. Phones have no
-    components; watches/bands report a single "0" entry that is the whole
-    device. Shared devices are phones and are treated as "main" as well.
+    Multi-part devices report several cptLocateInfoList entries; detect that
+    from the API payload when available, falling back to perDeviceType "1".
+    Phones have no components; watches/bands report a single "0" entry.
     """
-    if str(per_device_type or "") == "1":
+    if multi_component is None:
+        multi_component = str(per_device_type or "") == "1"
+    if multi_component:
         key = str(cpt_list or "")
         return _EARBUD_COMPONENTS.get(key, f"component_{key or 'unknown'}")
     return COMPONENT_MAIN
@@ -226,8 +255,12 @@ def components_from_locate_result(
     if not isinstance(locate_result, dict):
         return []
     names: list[str] = []
-    for entry in locate_result.get("cptLocateInfoList") or []:
-        name = component_name(_json_dict(entry).get("cptList"), per_device_type)
+    entries = locate_result.get("cptLocateInfoList") or []
+    multi_component = len(entries) > 1 or str(per_device_type or "") == "1"
+    for entry in entries:
+        name = component_name(
+            _json_dict(entry).get("cptList"), multi_component=multi_component
+        )
         if name not in names:
             names.append(name)
     return names
@@ -367,9 +400,13 @@ def _parse_locate_info(
     result_stale = exe_result not in ("", "0")
 
     batteries: dict[str, dict[str, Any]] = {}
-    for entry in payload.get("cptLocateInfoList") or []:
+    cpt_entries = payload.get("cptLocateInfoList") or []
+    multi_component = len(cpt_entries) > 1 or str(per_device_type or "") == "1"
+    for entry in cpt_entries:
         entry_dict = _json_dict(entry)
-        name = component_name(entry_dict.get("cptList"), per_device_type)
+        name = component_name(
+            entry_dict.get("cptList"), multi_component=multi_component
+        )
         if name in batteries:
             continue
         reported_at = execute_time

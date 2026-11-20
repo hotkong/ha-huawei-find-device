@@ -12,7 +12,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
@@ -21,12 +21,17 @@ from homeassistant.util import dt as dt_util
 from .api import HuaweiFindAuthError, HuaweiFindClient, HuaweiFindError
 from .const import (
     CONF_AMAP_KEY,
+    CONF_BROWSER_TOKEN,
+    CONF_BROWSER_URL,
     CONF_COOKIE,
     CONF_DEVICES,
     CONF_GEOCODE_PROVIDER,
+    CONF_HW_PASSWORD,
+    CONF_HW_USERNAME,
     CONF_SCAN_INTERVAL,
     DOMAIN,
     GEOCODE_AUTO,
+    SERVICE_REFRESH_COOKIE,
     SERVICE_REFRESH,
     SERVICE_SET_COOKIE,
 )
@@ -60,7 +65,8 @@ from .options import (  # noqa: F401  (re-exported for config flow and tests)
     apply_options,
     auth_age_days,
 )
-from .services import (  # noqa: F401  (registered below)
+from .services import (
+    async_handle_refresh_cookie,  # noqa: F401  (registered below)
     async_handle_refresh_service,
     async_handle_set_cookie,
 )
@@ -74,12 +80,17 @@ PLATFORMS: list[Platform] = [
     Platform.DEVICE_TRACKER,
 ]
 
-SERVICE_SCHEMA = vol.Schema({})
+SERVICE_SCHEMA = vol.Schema(
+    {vol.Optional("entry_id"): str, vol.Optional("device_id"): str}
+)
 SET_COOKIE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_COOKIE): str,
         vol.Optional("entry_id"): str,
     }
+)
+REFRESH_COOKIE_SCHEMA = vol.Schema(
+    {vol.Optional("entry_id"): str, vol.Optional("update", default=True): bool}
 )
 
 # The portal pings heartbeatCheck while a browser tab is open; doing the same
@@ -138,6 +149,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         store=store,
         geocode_provider=options.get(CONF_GEOCODE_PROVIDER, GEOCODE_AUTO),
         amap_key=options.get(CONF_AMAP_KEY, ""),
+        browser_url=(options.get(CONF_BROWSER_URL) or "").strip(),
+        browser_token=(options.get(CONF_BROWSER_TOKEN) or "").strip(),
+        browser_username=(options.get(CONF_HW_USERNAME) or "").strip(),
+        browser_password=(options.get(CONF_HW_PASSWORD) or "").strip(),
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
 
@@ -155,6 +170,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_SET_COOKIE,
             partial(async_handle_set_cookie, hass),
             schema=SET_COOKIE_SCHEMA,
+        )
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REFRESH_COOKIE,
+            partial(async_handle_refresh_cookie, hass),
+            schema=REFRESH_COOKIE_SCHEMA,
+            supports_response=SupportsResponse.OPTIONAL,
         )
 
     async def _heartbeat(_now) -> None:

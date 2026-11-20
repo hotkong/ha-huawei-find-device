@@ -168,8 +168,8 @@ class HuaweiBatterySensor(SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_{runtime.entry.entry_id}_{device['id']}_battery"
         cached = runtime.results.get(device["id"], {})
         self._attr_native_value = self._value_from(cached)
-        if str(device.get("per_device_type") or "") == "1":
-            # Earbuds: this is the lowest of the per-part values (see 05 docs).
+        if len(battery_components(device)) > 1:
+            # Multi-part device: this is the lowest per-part value (see 05 docs).
             self._attr_translation_key = "battery_lowest"
         self._attr_extra_state_attributes = self._build_attributes(cached)
 

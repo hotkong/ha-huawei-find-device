@@ -3,9 +3,10 @@
     "step": {
       "user": {
         "title": "Connect to Huawei Cloud",
-        "description": "Log in at [cloud.huawei.com](https://cloud.huawei.com/) → open \"Find Device\" → press F12 → Network, trigger one locate, then copy the whole Cookie request header and paste it below.",
-        "data": {
-          "cookie": "Cookie"
+        "description": "Choose how to authenticate.",
+        "menu_options": {
+          "paste": "Paste a Cookie",
+          "browser": "Get a Cookie with a browser"
         }
       },
       "devices": {
@@ -18,21 +19,76 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate Huawei Cloud",
-        "description": "The Huawei Cloud session has expired. Log in again at [cloud.huawei.com](https://cloud.huawei.com/), open \"Find Device\", then copy a fresh Cookie request header and paste it below.",
-        "data": {
-          "cookie": "Cookie"
+        "description": "The session expired. Choose how to authenticate again.",
+        "menu_options": {
+          "reauth_paste": "Paste a new Cookie",
+          "reauth_browser": "Get a Cookie with a browser"
         }
       },
       "init": {
         "title": "Options",
         "description": "Address source, refresh interval and tracked devices — all on one page."
+      },
+      "cookie_preview": {
+        "title": "Cookie obtained",
+        "description": "⚠️ This is a session credential; do not screenshot or share it. The Cookie is pre-filled and editable; continue when it looks right.",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "reauth_preview": {
+        "title": "Cookie obtained",
+        "description": "⚠️ This is a session credential; do not screenshot or share it. Confirm to write it back and reload this account.",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "paste": {
+        "title": "Paste a Cookie",
+        "description": "On the Huawei Cloud Find Device page, open DevTools → Network and copy the Cookie request header.",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "browser": {
+        "title": "Get a Cookie with a browser",
+        "description": "Fill in the browserless endpoint and credentials. Submitting logs in and pre-fills the Cookie.\n\nLast error: {error}",
+        "data": {
+          "browser_url": "Headless browser URL",
+          "browser_token": "Browserless token (optional)",
+          "username": "Huawei account",
+          "password": "Huawei password",
+          "store_credentials": "Store these credentials for automatic re-login"
+        },
+        "data_description": {
+          "store_credentials": "The credentials are stored in plain text in this entry's .storage."
+        }
+      },
+      "reauth_paste": {
+        "title": "Paste a new Cookie",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "reauth_browser": {
+        "title": "Get a Cookie with a browser",
+        "description": "Fill in the browserless endpoint and credentials. Submitting logs in and pre-fills the Cookie.\n\nLast error: {error}",
+        "data": {
+          "browser_url": "Headless browser URL",
+          "browser_token": "Browserless token (optional)",
+          "username": "Huawei account",
+          "password": "Huawei password",
+          "store_credentials": "Store these credentials for automatic re-login"
+        }
       }
     },
     "error": {
       "invalid_auth": "Invalid or expired Cookie. Log in to Huawei Cloud again and copy a fresh one.",
       "cannot_connect": "Cannot reach Huawei Cloud.",
       "no_devices": "No devices found for this account.",
-      "devices_unavailable": "Could not load the device list (the session may have expired). Only the address/refresh settings can be changed right now."
+      "devices_unavailable": "Could not load the device list (the session may have expired). Only the address/refresh settings can be changed right now.",
+      "browser_login_invalid": "Browser URL, Huawei account and password are required.",
+      "browser_login_failed": "Browser login failed: {error}"
     },
     "abort": {
       "already_configured": "This Huawei account is already configured.",
@@ -40,20 +96,42 @@
       "reauth_failed": "Re-authentication failed.",
       "session_expired": "The Huawei Cloud session has expired. Re-authenticate first, then try again.",
       "cannot_connect": "Cannot reach Huawei Cloud right now."
+    },
+    "progress": {
+      "browser_login": "Logging in through the headless browser (up to about a minute)…"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Reverse geocoding",
-        "description": "The Huawei Cloud API returns coordinates only. Pick a third-party service to resolve a readable address.",
+        "title": "Options",
+        "description": "Address source, refresh interval, tracked devices and optional automatic re-login. Setup: [README](https://github.com/hotkong/ha-huawei-find-device/blob/main/README.md#auto-relogin).",
         "data": {
           "geocode_provider": "Address provider",
           "amap_key": "AMap web service key (AMap only)",
-          "scan_interval": "Automatic refresh interval (minutes, 0 = disabled, default 15)"
+          "scan_interval": "Automatic refresh interval (minutes, 0 = disabled, default 15)",
+          "browser_url": "Headless browser URL (browserless, optional)",
+          "browser_token": "Browserless token (optional)",
+          "username": "Huawei account (for auto re-login, optional)",
+          "password": "Huawei password (stored in HA, optional)",
+          "devices": "Tracked devices"
+        },
+        "sections": {
+          "auto_login": {
+            "name": "Automatic re-login (optional)",
+            "description": "Only used when the pasted cookie expires: log in through a browserless endpoint and store the new cookie. Leave empty to keep manual paste."
+          }
+        },
+        "data_description": {
+          "devices": "Unchecking stops tracking and cleans up the related entities.",
+          "browser_url": "Used only when the cookie expires. browserless v2 endpoint (e.g. http://192.168.1.100:3000) plus the Huawei credentials below; verification codes still need manual action.",
+          "browser_token": "Only needed when your browserless instance requires a token.",
+          "username": "Used only for the headless-login fallback; leave empty to keep manual cookie paste.",
+          "password": "Stored in plain text in HA .storage; evaluate the risk before enabling."
         }
       }
-    }
+    },
+    "error": {}
   },
   "entity": {
     "button": {
@@ -103,17 +181,40 @@
   },
   "services": {
     "refresh": {
-      "name": "Refresh device info",
-      "description": "Refresh device info (location, battery, lock state, address) for every device on the account.",
-      "fields": {}
+      "name": "Refresh devices",
+      "description": "Refresh every device, or only the selected HA device when device_id is set.",
+      "fields": {
+        "entry_id": {
+          "name": "Account entry",
+          "description": "Limit to this account; with multiple accounts use this or device_id."
+        },
+        "device_id": {
+          "name": "Device",
+          "description": "Refresh only this device (pick from the device dropdown)."
+        }
+      }
     },
     "set_cookie": {
-      "name": "Set cookie",
-      "description": "Update the Huawei Cloud session cookie without the UI.",
+      "name": "Set cookie manually",
+      "description": "Write the cookie you paste directly, without browser login or device validation.",
       "fields": {
         "cookie": {
           "name": "Cookie",
-          "description": "Full cookie header value"
+          "description": "Full cookie request header value"
+        }
+      }
+    },
+    "refresh_cookie": {
+      "name": "Log in with a browser and refresh cookie",
+      "description": "Log in with the configured browserless endpoint and Huawei account, verify the new cookie, then store it; failures return a specific reason.",
+      "fields": {
+        "entry_id": {
+          "name": "Account entry",
+          "description": "Leave empty with a single account; pick one from the dropdown when there are multiple."
+        },
+        "update": {
+          "name": "Update entry",
+          "description": "Turn off to test without storing the cookie."
         }
       }
     }

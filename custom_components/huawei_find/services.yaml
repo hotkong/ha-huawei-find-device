@@ -1,4 +1,16 @@
 refresh:
+  fields:
+    entry_id:
+      example: "01M68GNRAS24MZPDJ9H0SWHGFB"
+      required: false
+      selector:
+        config_entry:
+          integration: huawei_find
+    device_id:
+      required: false
+      selector:
+        device:
+          integration: huawei_find
 set_cookie:
   fields:
     cookie:
@@ -11,4 +23,20 @@ set_cookie:
       example: "01M68GNRAS24MZPDJ9H0SWHGFB"
       required: false
       selector:
-        text:
+        config_entry:
+          integration: huawei_find
+
+refresh_cookie:
+  fields:
+    entry_id:
+      example: "01M68GNRAS24MZPDJ9H0SWHGFB"
+      required: false
+      selector:
+        config_entry:
+          integration: huawei_find
+    update:
+      example: true
+      default: true
+      required: false
+      selector:
+        boolean:

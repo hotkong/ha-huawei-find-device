@@ -13,8 +13,13 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
 from .api import HuaweiFindAuthError, HuaweiFindError
+from .auto_login import RECOVERED, SKIPPED, async_try_auto_login
 from .const import (
     CONF_AMAP_KEY,
+    CONF_BROWSER_TOKEN,
+    CONF_BROWSER_URL,
+    CONF_HW_PASSWORD,
+    CONF_HW_USERNAME,
     CONF_AUTH_TIME,
     CONF_GEOCODE_PROVIDER,
     CONF_SCAN_INTERVAL,
@@ -79,7 +84,15 @@ async def _async_heartbeat(hass: HomeAssistant, runtime: HuaweiFindRuntime) -> N
         runtime.heartbeat_failures += 1
         runtime.heartbeat_ok = False
         _LOGGER.error("Heartbeat: session expired: %s", err)
-        _notify_reauth(hass, runtime, str(err))
+        outcome = await async_try_auto_login(hass, runtime, str(err))
+        if outcome == RECOVERED:
+            runtime.heartbeat_failures = 0
+            runtime.heartbeat_ok = True
+            _LOGGER.info("Heartbeat recovered via automatic login")
+        elif outcome == SKIPPED:
+            _LOGGER.info("Heartbeat: automatic login deferred (busy or cooling down)")
+        else:
+            _notify_reauth(hass, runtime, str(err))
     except HuaweiFindError as err:
         runtime.heartbeat_failures += 1
         runtime.heartbeat_ok = False
@@ -116,6 +129,10 @@ def apply_options(
     previous_key = runtime.amap_key
     runtime.geocode_provider = options.get(CONF_GEOCODE_PROVIDER, GEOCODE_AUTO)
     runtime.amap_key = options.get(CONF_AMAP_KEY, "")
+    runtime.browser_url = (options.get(CONF_BROWSER_URL) or "").strip()
+    runtime.browser_token = (options.get(CONF_BROWSER_TOKEN) or "").strip()
+    runtime.browser_username = (options.get(CONF_HW_USERNAME) or "").strip()
+    runtime.browser_password = (options.get(CONF_HW_PASSWORD) or "").strip()
 
     if (
         runtime.geocode_provider != previous_provider

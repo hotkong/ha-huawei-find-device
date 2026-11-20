@@ -3,9 +3,10 @@
     "step": {
       "user": {
         "title": "连接华为云",
-        "description": "请在 [华为云空间](https://cloud.huawei.com/) 登录 → 打开「查找设备」并点一次定位 → 按 F12 → Network，复制完整的 Cookie 请求头粘贴到下方。",
-        "data": {
-          "cookie": "Cookie"
+        "description": "选择一种认证方式。",
+        "menu_options": {
+          "paste": "粘贴 Cookie",
+          "browser": "用浏览器获取 Cookie"
         }
       },
       "devices": {
@@ -18,21 +19,76 @@
       },
       "reauth_confirm": {
         "title": "重新授权华为云",
-        "description": "华为云登录态已失效。请到 [华为云空间](https://cloud.huawei.com/) 重新登录，打开「查找设备」后复制新的 Cookie 请求头粘贴到下方。",
-        "data": {
-          "cookie": "Cookie"
+        "description": "会话已失效，选择重新认证方式。",
+        "menu_options": {
+          "reauth_paste": "粘贴新 Cookie",
+          "reauth_browser": "用浏览器获取 Cookie"
         }
       },
       "init": {
         "title": "配置",
         "description": "地址反查、刷新间隔与跟踪设备，都在这一页修改。"
+      },
+      "cookie_preview": {
+        "title": "Cookie 已获取",
+        "description": "⚠️ 这是登录态凭据，请勿截图或外传。 下面是用浏览器登录得到的 Cookie（已填好，可修改），确认后继续。",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "reauth_preview": {
+        "title": "Cookie 已获取",
+        "description": "⚠️ 这是登录态凭据，请勿截图或外传。 确认后写回该账号并重新加载。",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "paste": {
+        "title": "粘贴 Cookie",
+        "description": "在华为云「查找设备」页面按 F12 → Network，复制请求头里的 Cookie。",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "browser": {
+        "title": "用无头浏览器获取 Cookie",
+        "description": "填写 browserless 地址与华为账号密码，提交后会登录并生成 Cookie 供你确认。\n\n最近一次错误：{error}",
+        "data": {
+          "browser_url": "无头浏览器地址",
+          "browser_token": "Browserless 令牌（可选）",
+          "username": "华为账号",
+          "password": "华为密码",
+          "store_credentials": "保存这些凭据用于以后自动重登"
+        },
+        "data_description": {
+          "store_credentials": "勾选后凭据会明文保存在该条目的 .storage 中。"
+        }
+      },
+      "reauth_paste": {
+        "title": "粘贴新 Cookie",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "reauth_browser": {
+        "title": "用浏览器获取 Cookie",
+        "description": "填写 browserless 地址与华为账号密码，提交后会登录并生成 Cookie 供你确认。\n\n最近一次错误：{error}",
+        "data": {
+          "browser_url": "无头浏览器地址",
+          "browser_token": "Browserless 令牌（可选）",
+          "username": "华为账号",
+          "password": "华为密码",
+          "store_credentials": "保存这些凭据用于以后自动重登"
+        }
       }
     },
     "error": {
       "invalid_auth": "Cookie 无效或已过期，请重新登录华为云后复制。",
       "cannot_connect": "无法连接华为云。",
       "no_devices": "该账号下没有可用设备。",
-      "devices_unavailable": "暂时无法获取设备列表（会话可能已过期），本次只能修改地址与刷新设置。"
+      "devices_unavailable": "暂时无法获取设备列表（会话可能已过期），本次只能修改地址与刷新设置。",
+      "browser_login_invalid": "浏览器地址、华为账号和密码都必须填写。",
+      "browser_login_failed": "浏览器登录失败：{error}"
     },
     "abort": {
       "already_configured": "该华为账号已经添加过了。",
@@ -40,20 +96,42 @@
       "reauth_failed": "重新授权失败。",
       "session_expired": "华为云会话已过期，请先重新授权后再试。",
       "cannot_connect": "暂时无法连接华为云。"
+    },
+    "progress": {
+      "browser_login": "正在通过无头浏览器登录华为云，最多约 1 分钟…"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "地址反查设置",
-        "description": "华为云接口只返回经纬度、不返回地址；如需中文地址，请选择第三方反查服务。",
+        "title": "选项",
+        "description": "地址来源、刷新间隔、跟踪设备与自动重登（可选）。自动重登步骤见 [README](https://github.com/hotkong/ha-huawei-find-device/blob/main/README.md#auto-relogin)。",
         "data": {
           "geocode_provider": "地址来源",
           "amap_key": "高德 Web 服务 Key（仅高德需要）",
-          "scan_interval": "自动刷新间隔（分钟，0 = 关闭，默认 15）"
+          "scan_interval": "自动刷新间隔（分钟，0 = 关闭，默认 15）",
+          "browser_url": "无头浏览器地址（browserless，可选）",
+          "browser_token": "Browserless 访问令牌（可选）",
+          "username": "华为账号（自动重登用，可选）",
+          "password": "华为密码（保存在 HA 中，可选）",
+          "devices": "跟踪设备"
+        },
+        "sections": {
+          "auto_login": {
+            "name": "自动重登（可选增强）",
+            "description": "仅在 Cookie 失效时使用：通过 browserless 无头浏览器登录并写回新 Cookie。都不填则保持手动贴 Cookie。"
+          }
+        },
+        "data_description": {
+          "devices": "取消勾选会停止跟踪并清理对应实体。",
+          "browser_url": "仅在 Cookie 失效时使用。填 browserless v2 地址（如 http://192.168.1.100:3000），并填写下面的华为账号密码；验证码/短信仍需人工。",
+          "browser_token": "仅当 browserless 启用了 token 时填写。",
+          "username": "仅用于无头浏览器自动重登；不填则保持手动贴 Cookie。",
+          "password": "与账号一起明文保存在 HA .storage 中，请自行评估风险。"
         }
       }
-    }
+    },
+    "error": {}
   },
   "entity": {
     "button": {
@@ -103,17 +181,40 @@
   },
   "services": {
     "refresh": {
-      "name": "刷新设备信息",
-      "description": "让华为云刷新账号下全部设备的信息（位置、电量、锁屏、地址）。",
-      "fields": {}
+      "name": "刷新设备",
+      "description": "不传 device_id 时刷新全部设备；指定 HA 设备时只刷新该设备。",
+      "fields": {
+        "entry_id": {
+          "name": "账号条目",
+          "description": "只刷新该账号；多账号时与 device_id 二选一。"
+        },
+        "device_id": {
+          "name": "设备",
+          "description": "只刷新这一台设备（从设备下拉选择）。"
+        }
+      }
     },
     "set_cookie": {
-      "name": "设置 Cookie",
-      "description": "不经过界面，直接更新华为云会话 Cookie。",
+      "name": "手动设置 Cookie",
+      "description": "直接写入你粘贴的 Cookie，不做浏览器登录或设备校验。",
       "fields": {
         "cookie": {
           "name": "Cookie",
-          "description": "Full cookie header value"
+          "description": "完整的 Cookie 请求头值"
+        }
+      }
+    },
+    "refresh_cookie": {
+      "name": "浏览器登录并刷新 Cookie",
+      "description": "用已配置的 browserless 与华为账号登录，验证新 Cookie 后写回；失败会返回具体原因。",
+      "fields": {
+        "entry_id": {
+          "name": "账号条目",
+          "description": "只配置了一个账号时可留空；多账号时从下拉选择。"
+        },
+        "update": {
+          "name": "写回条目",
+          "description": "关闭时只测试、不更新 Cookie。"
         }
       }
     }

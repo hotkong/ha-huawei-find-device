@@ -4,7 +4,7 @@ import json
 import time
 import unittest
 
-from custom_components.huawei_find.api import _parse_locate_info
+from custom_components.huawei_find.api import _parse_locate_info, components_from_locate_result
 
 
 def _payload(coords, battery="81", exe_result="0"):
@@ -159,3 +159,20 @@ class EarbudBatteryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MultiComponentDetectionTests(unittest.TestCase):
+    def test_multiple_entries_are_named_without_per_device_type(self):
+        payload = {
+            "cptLocateInfoList": [
+                {"cptList": "0", "batteryStatus": json.dumps({"percentage": 80})},
+                {"cptList": "1", "batteryStatus": json.dumps({"percentage": 60})},
+            ]
+        }
+        self.assertEqual(
+            components_from_locate_result(payload, None), ["case", "left"]
+        )
+
+    def test_single_entry_stays_main(self):
+        payload = {"cptLocateInfoList": [{"cptList": "0", "batteryStatus": ""}]}
+        self.assertEqual(components_from_locate_result(payload, "9"), ["main"])

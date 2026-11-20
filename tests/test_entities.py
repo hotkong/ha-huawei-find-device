@@ -193,6 +193,12 @@ class BatteryComponentSelectionTests(unittest.TestCase):
         device["components"] = []
         self.assertEqual(battery_components(device), ("left", "right"))
 
+    def test_capability_bell_without_components_falls_back_to_buds(self):
+        self.assertEqual(
+            battery_components({"per_device_type": "9", "capability": ["bell"]}),
+            ("left", "right"),
+        )
+
     def test_phones_and_watches_have_no_component_sensors(self):
         self.assertEqual(battery_components(DEVICE), ())
         self.assertEqual(battery_components({"per_device_type": "2"}), ())

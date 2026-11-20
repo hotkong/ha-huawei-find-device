@@ -88,6 +88,35 @@ class RingCapabilityTests(unittest.TestCase):
     def test_shared_cannot_ring(self):
         self.assertFalse(supports_ring({"per_device_type": "0", "is_shared": True}))
 
+    def test_earbuds_with_bell_can_ring(self):
+        self.assertTrue(
+            supports_ring(
+                {
+                    "per_device_type": "1",
+                    "is_shared": False,
+                    "capability": ["bell"],
+                }
+            )
+        )
+
+    def test_earbuds_without_bell_cannot_ring(self):
+        self.assertFalse(
+            supports_ring(
+                {"per_device_type": "1", "is_shared": False, "capability": []}
+            )
+        )
+
+    def test_shared_earbuds_cannot_ring(self):
+        self.assertFalse(
+            supports_ring(
+                {
+                    "per_device_type": "1",
+                    "is_shared": True,
+                    "capability": ["bell"],
+                }
+            )
+        )
+
 
 class RingTests(unittest.IsolatedAsyncioTestCase):
     async def test_push_failure_is_retried_once(self):

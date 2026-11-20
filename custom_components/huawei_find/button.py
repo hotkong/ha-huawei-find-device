@@ -88,6 +88,17 @@ class HuaweiRefreshAllButton(ButtonEntity):
                 if hasattr(last_heartbeat, "isoformat")
                 else last_heartbeat
             ),
+            "browser_login_configured": bool(
+                self._runtime.browser_url
+                and self._runtime.browser_username
+                and self._runtime.browser_password
+            ),
+            "last_login_error": self._runtime.login_error,
+            "last_login_success": (
+                self._runtime.last_login_success.isoformat()
+                if hasattr(self._runtime.last_login_success, "isoformat")
+                else self._runtime.last_login_success
+            ),
         }
 
     async def async_added_to_hass(self) -> None:

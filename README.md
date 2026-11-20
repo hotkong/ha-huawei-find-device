@@ -37,7 +37,7 @@ battery and status on demand, or make the phone ring.
 
 **找回手机**
 
-- 自有手机、手表、手环各一个「响铃」按钮，触发最大音量警报，30 秒冷却，推送失败会自动重试一次；
+- 自有手机、手表、手环，以及带 `bell` 能力的耳机（如 FreeBuds Lipstick）各一个「响铃」按钮，触发最大音量警报，30 秒冷却，推送失败会自动重试一次；
 - 只对本账号自己的设备有效：家人共享的设备不支持。
 
 **自动化与维护**
@@ -46,6 +46,8 @@ battery and status on demand, or make the phone ring.
 - 地址反查支持多种来源，默认自动降级（华为 → 高德 → OSM）；切换来源后已有坐标立即重新解析，不会唤醒手机；
 - 所有选项修改后立即生效，不需要重启或重载集成；
 - 会话状态可在「刷新全部设备信息」按钮属性里查看，失效时会弹通知引导重新授权；
+- 集成详情页支持 HA 原生「下载诊断」：会话/设备/最近定位结果脱敏导出，方便报障；
+- 可选：Cookie 失效时用 browserless 无头浏览器自动重登并写回新 Cookie（验证码/短信仍需人工）；配置页里这些项收在一个「自动重登（可选增强）」折叠分组；多账号下每个条目独立配置，写回前会校验 Cookie 归属，防止串号；
 - 同一位置短时间内不会重复做地址反查。
 
 **多账号**
@@ -76,6 +78,8 @@ battery and status on demand, or make the phone ring.
 
 > 必须从请求头复制：浏览器控制台里的 `document.cookie` 拿不到登录态的完整信息。
 
+> 不想手动复制？添加集成时先二选一：「粘贴 Cookie」或「用浏览器获取 Cookie」。选后者填 browserless 地址与华为账号密码，提交后会登录并把 Cookie 预填到确认页；确认后继续选设备即可。重新授权时也有同样入口。
+
 > **让 Cookie 更耐用的实测经验**：用**无痕窗口**打开 <https://cloud.huawei.com/> 登录并提取 Cookie，
 > **提取完尽快关闭无痕窗口**；之后不要在普通窗口再登录同一个华为账号，避免两边会话互相轮换、
 > 把 HA 里的 Cookie 顶掉。配合 10–20 分钟的自动刷新，Cookie 通常能稳定使用很久
@@ -100,8 +104,9 @@ battery and status on demand, or make the phone ring.
 | `binary_sensor.<device>_charging` | 充电状态（仅手机；手表/手环无此实体） |
 | `sensor.<device>_last_locate_status` | 上次定位状态：成功 / 过期 / 未知（诊断类） |
 | `device_tracker.<device>` | GPS 追踪器，可绑定 `person` |
-| 服务 `huawei_find.refresh` | 同「刷新全部设备信息」，等全部设备查完才返回 |
-| 服务 `huawei_find.set_cookie` | 直接更新会话 Cookie，无需操作界面（多账号时需指定目标账号） |
+| 服务 `huawei_find.refresh` | 不传 `device_id` 时刷新全部设备；传 HA 设备 ID 只刷新该设备；等请求完成才返回 |
+| 服务 `huawei_find.set_cookie` | 直接更新会话 Cookie，无需操作界面（多账号时从账号下拉选择） |
+| 服务 `huawei_find.refresh_cookie` | browserless 登录 → 校验新 Cookie → 成功才写回；返回长度/账号尾号/设备数，失败带原因 |
 
 「刷新全部设备信息」按钮的属性：设备数、启用中的设备数、正在刷新的设备、各设备最近状态、当前 Cookie 已使用天数、最近一次会话保活是否成功及时间、累计保活失败次数。
 
@@ -116,6 +121,9 @@ battery and status on demand, or make the phone ring.
 | 地址来源 | `Auto`（推荐，华为 → 高德 → OSM 依次降级）/ `Huawei Map`（免 Key）/ `AMap / Gaode`（需 [高德开放平台](https://lbs.amap.com/) Key）/ `OpenStreetMap`（免 Key）/ `Disabled`（只用坐标） |
 | 高德 Key | 仅选择高德时需要 |
 | 自动刷新间隔 | 分钟，`0` = 关闭；**默认 15**；最大 720 |
+| 无头浏览器地址 | 可选，如 `http://192.168.1.100:3000`（browserless v2，`/pressure` 可访问） |
+| Browserless 令牌 | 可选，实例启用 token 时填写 |
+| 华为账号 / 密码 | 可选，仅用于 Cookie 失效时自动重登；**明文保存在 HA `.storage`** |
 
 > **建议把自动刷新间隔设为 10–20 分钟，不要超过 20 分钟。**  
 > 华为云会话会因长时间没有新请求而失效，间隔过大时更容易掉线；失效后需要重新粘贴 Cookie。
@@ -159,6 +167,18 @@ mode: single
 
 调用 `huawei_find.set_cookie` 时，如果配置了多个账号，需要额外指定目标账号，避免写错。
 
+<a id="auto-relogin"></a>
+### 自动重登（可选）
+
+Cookie 仍是主认证。会话失效时可选用 browserless 无头登录自动换一份新 Cookie：
+
+1. 部署一个 browserless v2（`GET /pressure` 返回 200），HA 能访问到；
+2. 配置里填「无头浏览器地址」；实例启用 token 时再填 token；
+3. 填华为账号/密码（明文保存在 HA `.storage`，请评估风险）；
+4. 失效时自动用无头浏览器登录；遇到图形/短信验证码仍需人工贴 Cookie。
+
+成功后写回新 Cookie，并清掉通知与残留的“重新验证”流程。
+
 ### 会话与重新授权
 
 - 华为云会话会过期，**具体期限不固定**，取决于华为侧的策略和你的使用频率；
@@ -169,11 +189,12 @@ mode: single
 
 ### 已知限制
 
-- 响铃只支持本账号自己的设备（手机/手表/手环）；家人共享的设备不支持；
+- 响铃支持本账号自己的手机/手表/手环，以及带 `bell` 能力的耳机（如 FreeBuds Lipstick）；家人共享的设备不支持；
 - 手表/手环也能定位，但需要设备在线；离线时查询会返回「设备不活跃」；
 - 返回的坐标可能是云端缓存，无法区分「刚刚上报」与「上次缓存」；
 - 地址反查依赖第三方服务，偶发超时会沿用上次地址并标记为已过期；
-- 华为云会话失效后必须手动更新 Cookie，没有自动续期方式。
+- 华为云会话失效后默认需手动更新 Cookie；配置了浏览器自动重登才可能自动恢复，遇到验证码/短信仍需人工。
+- 启用浏览器登录会把华为账号密码明文存进 HA 的 `.storage`，请自行评估风险。
 
 ### Roadmap
 
@@ -182,12 +203,12 @@ mode: single
 - [x] 自动刷新间隔
 - [x] 失败保留最后坐标、跳过禁用设备
 - [x] 会话保活、失效提醒、提前提醒更新
-- [x] 响铃按钮（自有手机/手表/手环）
+- [x] 响铃按钮（自有手机/手表/手环 + 带 `bell` 能力的耳机）
 - [x] 多账号支持
 - [x] 选项即时生效、切换地址源立即重新解析
 - [ ] 自动刷新的时间窗（晚间不查询）
 - [ ] 设备列表热更新（不重载集成）
-- [ ] 诊断信息导出（自动脱敏）
+- [x] 诊断信息导出（自动脱敏）
 
 ---
 
@@ -224,6 +245,7 @@ resulting position.
   known coordinates immediately without waking the phone;
 - Option changes apply instantly, no restart or reload;
 - Session status visible on the "refresh all device info" button, with a re-auth notification when it expires;
+- Optional: an expired cookie can be renewed by a headless login through browserless (verification codes still need manual action);
 - Repeated lookups of the same position are not re-resolved.
 
 **Multiple accounts**
@@ -252,7 +274,7 @@ it into the integration setup, then pick the devices to track. Repeat for a seco
 
 `button.*_refresh_all_device_info`, `button.*_refresh_device_info` (older installs keep `_refresh_all_locations` / `_refresh_location`), `button.*_ring`, `sensor.*_last_location`,
 `sensor.*_battery`, `binary_sensor.*_charging` (phones only), `sensor.*_last_locate_status`,
-`device_tracker.*`, plus the `huawei_find.refresh` and `huawei_find.set_cookie` services.
+`device_tracker.*`, plus the `huawei_find.refresh`, `huawei_find.set_cookie` and `huawei_find.refresh_cookie` services.
 
 ### Recommended settings
 

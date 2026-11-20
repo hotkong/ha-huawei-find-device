@@ -33,6 +33,7 @@ from .const import (
     RING_RETRIES,
     RING_RETRY_DELAY,
 )
+from .auto_login import RECOVERED, SKIPPED, async_try_auto_login
 from .geocode import async_reverse_geocode
 from .helpers import (
     HuaweiFindRuntime,
@@ -202,8 +203,20 @@ async def async_refresh_device(
                     result = await _async_locate_with_retry(runtime, device)
             except HuaweiFindAuthError as err:
                 _LOGGER.warning("Huawei Cloud session expired: %s", err)
-                result = {"status": "auth_expired", "last_error": str(err)}
-                _notify_reauth(hass, runtime, str(err))
+                outcome = await async_try_auto_login(hass, runtime, str(err))
+                if outcome == RECOVERED:
+                    try:
+                        async with runtime.semaphore:
+                            result = await _async_locate_with_retry(runtime, device)
+                    except HuaweiFindAuthError as retry_err:
+                        result = {"status": "auth_expired", "last_error": str(retry_err)}
+                        _notify_reauth(hass, runtime, str(retry_err))
+                    except (HuaweiFindDeviceError, HuaweiFindError) as retry_err:
+                        result = {"status": "error", "last_error": str(retry_err)}
+                else:
+                    result = {"status": "auth_expired", "last_error": str(err)}
+                    if outcome != SKIPPED:
+                        _notify_reauth(hass, runtime, str(err))
             except HuaweiFindDeviceError as err:
                 _LOGGER.debug("Device %s is not reachable: %s", device.get("name"), err)
                 result = {"status": "error", "last_error": str(err)}
@@ -264,7 +277,7 @@ async def async_ring_device(
     if not supports_ring(device):
         return {
             "ok": False,
-            "error": "Ringing is only supported for your own phones and wearables",
+            "error": "Ringing is only supported for your own phones, wearables and bell-capable earbuds",
         }
     elapsed = time.monotonic() - runtime.last_ring.get(device_id, 0.0)
     if elapsed < RING_COOLDOWN:

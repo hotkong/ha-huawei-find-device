@@ -84,3 +84,12 @@ POLL_INTERVAL = 2.0
 # A battery reading older than this is flagged as stale (earbuds/watches return
 # the cloud's last known value when they are offline).
 BATTERY_STALE_SECONDS = 6 * 3600
+
+# Optional browser-login fallback (BROWSER_URL = browserless endpoint)
+CONF_BROWSER_URL = "browser_url"
+CONF_BROWSER_TOKEN = "browser_token"
+CONF_HW_USERNAME = "username"
+CONF_HW_PASSWORD = "password"
+SERVICE_REFRESH_COOKIE = "refresh_cookie"
+AUTO_LOGIN_COOLDOWN = 600  # seconds between automatic attempts
+BROWSER_LOGIN_TIMEOUT = 150  # seconds for one browserless /function call

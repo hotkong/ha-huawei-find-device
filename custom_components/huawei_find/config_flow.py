@@ -14,7 +14,10 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
+    BooleanSelector,
+    BooleanSelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -28,9 +31,14 @@ from homeassistant.helpers.selector import (
 from homeassistant.util import dt as dt_util
 
 from .api import HuaweiFindAuthError, HuaweiFindClient, HuaweiFindError
+from .browser_login import BrowserLoginError, async_browser_login
 from .const import (
     CONF_AMAP_KEY,
     CONF_AUTH_TIME,
+    CONF_BROWSER_TOKEN,
+    CONF_BROWSER_URL,
+    CONF_HW_PASSWORD,
+    CONF_HW_USERNAME,
     CONF_COOKIE,
     CONF_DEVICES,
     CONF_GEOCODE_PROVIDER,
@@ -64,6 +72,26 @@ COOKIE_SELECTOR = TextSelector(
     TextSelectorConfig(type=TextSelectorType.TEXT, multiline=True)
 )
 STEP_USER_SCHEMA = vol.Schema({vol.Required(CONF_COOKIE): COOKIE_SELECTOR})
+BROWSER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_BROWSER_URL): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
+        ),
+        vol.Optional(CONF_BROWSER_TOKEN, default=""): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.PASSWORD)
+        ),
+        vol.Required(CONF_HW_USERNAME): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
+        ),
+        vol.Required(CONF_HW_PASSWORD): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.PASSWORD)
+        ),
+        vol.Optional("store_credentials", default=True): BooleanSelector(
+            BooleanSelectorConfig()
+        ),
+    }
+)
+PREVIEW_SCHEMA = vol.Schema({vol.Required(CONF_COOKIE): COOKIE_SELECTOR})
 
 
 class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -75,51 +103,205 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         self._cookie = ""
         self._devices: list[dict[str, Any]] = []
         self._user_id = ""
+        self._browser_input: dict[str, Any] = {}
+        self._login_task: Any = None
+        self._login_cookie: str | None = None
+        self._login_error: str | None = None
+        self._preview_step = "cookie_preview"
 
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> HuaweiFindOptionsFlow:
         return HuaweiFindOptionsFlow()
 
+    # -- helpers ------------------------------------------------------------
+    async def _validate_cookie(
+        self, cookie: str
+    ) -> tuple[list[dict[str, Any]] | None, str | None]:
+        try:
+            client = HuaweiFindClient(cookie)
+        except HuaweiFindError:
+            return None, "invalid_auth"
+        try:
+            devices = await client.async_get_devices()
+        except HuaweiFindAuthError:
+            return None, "invalid_auth"
+        except HuaweiFindError as err:
+            _LOGGER.warning("Cannot connect to Huawei Cloud: %s", err)
+            return None, "cannot_connect"
+        finally:
+            self._user_id = client.user_id
+            await client.async_close()
+        if not devices:
+            return None, "no_devices"
+        self._cookie = cookie
+        self._devices = devices
+        return devices, None
+
+    def _browser_options(self) -> dict[str, Any]:
+        if not self._browser_input.get("store_credentials", True):
+            return {}
+        return {
+            CONF_BROWSER_URL: self._browser_input.get(CONF_BROWSER_URL, ""),
+            CONF_BROWSER_TOKEN: self._browser_input.get(CONF_BROWSER_TOKEN, ""),
+            CONF_HW_USERNAME: self._browser_input.get(CONF_HW_USERNAME, ""),
+            CONF_HW_PASSWORD: self._browser_input.get(CONF_HW_PASSWORD, ""),
+        }
+
+    def _browser_schema(self) -> vol.Schema:
+        d = self._browser_input
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_BROWSER_URL, default=d.get(CONF_BROWSER_URL, "")
+                ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                vol.Optional(
+                    CONF_BROWSER_TOKEN, default=d.get(CONF_BROWSER_TOKEN, "")
+                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                vol.Required(
+                    CONF_HW_USERNAME, default=d.get(CONF_HW_USERNAME, "")
+                ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                vol.Required(
+                    CONF_HW_PASSWORD, default=d.get(CONF_HW_PASSWORD, "")
+                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                vol.Optional(
+                    "store_credentials", default=d.get("store_credentials", True)
+                ): BooleanSelector(BooleanSelectorConfig()),
+            }
+        )
+
+    async def _async_browser_login(self) -> None:
+        try:
+            self._login_cookie = await async_browser_login(
+                self._browser_input[CONF_BROWSER_URL],
+                self._browser_input[CONF_HW_USERNAME],
+                self._browser_input[CONF_HW_PASSWORD],
+                self._browser_input.get(CONF_BROWSER_TOKEN, ""),
+            )
+            self._login_error = None
+        except BrowserLoginError as err:
+            self._login_cookie = None
+            self._login_error = str(err)
+        except Exception as err:  # noqa: BLE001 - show any browser failure in the form
+            self._login_cookie = None
+            self._login_error = f"unexpected error: {err}"
+
+    async def _async_browser_step(
+        self, step_id: str, user_input: dict[str, Any] | None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {"error": ""}
+
+        if user_input is not None:
+            self._browser_input = {
+                CONF_BROWSER_URL: (user_input.get(CONF_BROWSER_URL) or "").strip(),
+                CONF_BROWSER_TOKEN: (
+                    user_input.get(CONF_BROWSER_TOKEN) or ""
+                ).strip(),
+                CONF_HW_USERNAME: (user_input.get(CONF_HW_USERNAME) or "").strip(),
+                CONF_HW_PASSWORD: user_input.get(CONF_HW_PASSWORD) or "",
+                "store_credentials": bool(
+                    user_input.get("store_credentials", True)
+                ),
+            }
+            if not (
+                self._browser_input[CONF_BROWSER_URL]
+                and self._browser_input[CONF_HW_USERNAME]
+                and self._browser_input[CONF_HW_PASSWORD]
+            ):
+                errors["base"] = "browser_login_invalid"
+            else:
+                self._login_task = self.hass.async_create_task(
+                    self._async_browser_login()
+                )
+                return self.async_show_progress(
+                    step_id=step_id,
+                    progress_action="browser_login",
+                    progress_task=self._login_task,
+                )
+
+        if self._login_task is not None:
+            if not self._login_task.done():
+                return self.async_show_progress(
+                    step_id=step_id,
+                    progress_action="browser_login",
+                    progress_task=self._login_task,
+                )
+            self._login_task = None
+            if self._login_error:
+                errors["base"] = "browser_login_failed"
+                placeholders["error"] = self._login_error[:250]
+                self._login_error = None
+            elif self._login_cookie:
+                self._cookie = self._login_cookie
+                return self.async_show_progress_done(
+                    next_step_id=self._preview_step
+                )
+            else:
+                errors["base"] = "browser_login_failed"
+                placeholders["error"] = "no cookie returned"
+
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self._browser_schema(),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
     # -- initial setup ------------------------------------------------------
     async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return self.async_show_menu(
+            step_id="user", menu_options=["paste", "browser"]
+        )
+
+    async def async_step_paste(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
-            try:
-                client = HuaweiFindClient(cookie)
-            except HuaweiFindError:
-                errors["base"] = "invalid_auth"
-                client = None
-            if client is None:
-                return self.async_show_form(
-                    step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors
-                )
-            try:
-                devices = await client.async_get_devices()
-            except HuaweiFindAuthError:
-                errors["base"] = "invalid_auth"
-            except HuaweiFindError as err:
-                _LOGGER.warning("Cannot connect to Huawei Cloud: %s", err)
-                errors["base"] = "cannot_connect"
+            _, error = await self._validate_cookie(cookie)
+            if error:
+                errors["base"] = error
             else:
-                if not devices:
-                    errors["base"] = "no_devices"
-                else:
-                    if client.user_id:
-                        self._user_id = client.user_id
-                        await self.async_set_unique_id(f"huawei_{client.user_id}")
-                        self._abort_if_unique_id_configured()
-                    self._cookie = cookie
-                    self._devices = devices
-                    return await self.async_step_devices()
-            finally:
-                await client.async_close()
+                if self._user_id:
+                    await self.async_set_unique_id(f"huawei_{self._user_id}")
+                    self._abort_if_unique_id_configured()
+                return await self.async_step_devices()
 
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors
+            step_id="paste", data_schema=STEP_USER_SCHEMA, errors=errors
+        )
+
+    async def async_step_browser(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        self._preview_step = "cookie_preview"
+        return await self._async_browser_step("browser", user_input)
+
+    async def async_step_cookie_preview(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cookie = (user_input.get(CONF_COOKIE) or "").strip()
+            _, error = await self._validate_cookie(cookie)
+            if error:
+                errors["base"] = error
+            else:
+                if self._user_id:
+                    await self.async_set_unique_id(f"huawei_{self._user_id}")
+                    self._abort_if_unique_id_configured()
+                return await self.async_step_devices()
+
+        return self.async_show_form(
+            step_id="cookie_preview",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_COOKIE, default=self._cookie): COOKIE_SELECTOR}
+            ),
+            errors=errors,
         )
 
     async def async_step_devices(
@@ -143,7 +325,8 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                 options={
                     CONF_SCAN_INTERVAL: _scan_interval_value(
                         user_input.get(CONF_SCAN_INTERVAL)
-                    )
+                    ),
+                    **self._browser_options(),
                 },
             )
 
@@ -183,56 +366,70 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
 
     # -- re-authorization ---------------------------------------------------
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
-        return await self.async_step_reauth_confirm()
+        self._preview_step = "reauth_preview"
+        return self.async_show_menu(
+            step_id="reauth_confirm",
+            menu_options=["reauth_paste", "reauth_browser"],
+        )
 
-    async def async_step_reauth_confirm(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
+    def _finish_reauth(self) -> ConfigFlowResult:
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if entry is None:
             return self.async_abort(reason="reauth_failed")
+        self.hass.config_entries.async_update_entry(
+            entry,
+            data={
+                **entry.data,
+                CONF_COOKIE: self._cookie,
+                CONF_AUTH_TIME: dt_util.utcnow().isoformat(),
+            },
+            options={**entry.options, **self._browser_options()},
+        )
+        self.hass.async_create_task(
+            self.hass.config_entries.async_reload(entry.entry_id)
+        )
+        return self.async_abort(reason="reauth_successful")
 
+    async def async_step_reauth_paste(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
-            try:
-                client = HuaweiFindClient(cookie)
-            except HuaweiFindError:
-                errors["base"] = "invalid_auth"
-                client = None
-            if client is None:
-                return self.async_show_form(
-                    step_id="reauth_confirm",
-                    data_schema=STEP_USER_SCHEMA,
-                    errors=errors,
-                )
-            try:
-                devices = await client.async_get_devices()
-            except HuaweiFindAuthError:
-                errors["base"] = "invalid_auth"
-            except HuaweiFindError:
-                errors["base"] = "cannot_connect"
+            _, error = await self._validate_cookie(cookie)
+            if error:
+                errors["base"] = error
             else:
-                if not devices:
-                    errors["base"] = "no_devices"
-                else:
-                    self.hass.config_entries.async_update_entry(
-                        entry,
-                        data={
-                            **entry.data,
-                            CONF_COOKIE: cookie,
-                            CONF_AUTH_TIME: dt_util.utcnow().isoformat(),
-                        },
-                    )
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_reload(entry.entry_id)
-                    )
-                    return self.async_abort(reason="reauth_successful")
-            finally:
-                await client.async_close()
+                return self._finish_reauth()
 
         return self.async_show_form(
-            step_id="reauth_confirm", data_schema=STEP_USER_SCHEMA, errors=errors
+            step_id="reauth_paste", data_schema=STEP_USER_SCHEMA, errors=errors
+        )
+
+    async def async_step_reauth_browser(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        self._preview_step = "reauth_preview"
+        return await self._async_browser_step("reauth_browser", user_input)
+
+    async def async_step_reauth_preview(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cookie = (user_input.get(CONF_COOKIE) or "").strip()
+            _, error = await self._validate_cookie(cookie)
+            if error:
+                errors["base"] = error
+            else:
+                return self._finish_reauth()
+
+        return self.async_show_form(
+            step_id="reauth_preview",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_COOKIE, default=self._cookie): COOKIE_SELECTOR}
+            ),
+            errors=errors,
         )
 
 
@@ -264,6 +461,10 @@ class HuaweiFindOptionsFlow(OptionsFlow):
             if selected is not None and not selected:
                 errors["base"] = "no_devices"
             else:
+                auto = user_input.get("auto_login")
+                if auto is None:
+                    # Section omitted (collapsed/untouched): keep existing values
+                    auto = entry.options
                 options = {
                     CONF_GEOCODE_PROVIDER: user_input.get(
                         CONF_GEOCODE_PROVIDER, GEOCODE_AUTO
@@ -272,6 +473,10 @@ class HuaweiFindOptionsFlow(OptionsFlow):
                     CONF_SCAN_INTERVAL: _scan_interval_value(
                         user_input.get(CONF_SCAN_INTERVAL)
                     ),
+                    CONF_BROWSER_URL: (auto.get(CONF_BROWSER_URL) or "").strip(),
+                    CONF_BROWSER_TOKEN: (auto.get(CONF_BROWSER_TOKEN) or "").strip(),
+                    CONF_HW_USERNAME: (auto.get(CONF_HW_USERNAME) or "").strip(),
+                    CONF_HW_PASSWORD: (auto.get(CONF_HW_PASSWORD) or "").strip(),
                 }
                 self.hass.config_entries.async_update_entry(entry, options=options)
 
@@ -325,6 +530,34 @@ class HuaweiFindOptionsFlow(OptionsFlow):
             vol.Optional(
                 CONF_AMAP_KEY, default=current.get(CONF_AMAP_KEY, "")
             ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+            vol.Optional("auto_login"): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_BROWSER_URL, default=current.get(CONF_BROWSER_URL, "")
+                        ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                        vol.Optional(
+                            CONF_BROWSER_TOKEN,
+                            default=current.get(CONF_BROWSER_TOKEN, ""),
+                        ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                        vol.Optional(
+                            CONF_HW_USERNAME, default=current.get(CONF_HW_USERNAME, "")
+                        ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                        vol.Optional(
+                            CONF_HW_PASSWORD, default=current.get(CONF_HW_PASSWORD, "")
+                        ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                    }
+                ),
+                {
+                    "collapsed": not any(
+                        current.get(key)
+                        for key in (
+                            CONF_BROWSER_URL,
+                            CONF_HW_USERNAME,
+                        )
+                    )
+                },
+            ),
             vol.Optional(
                 CONF_SCAN_INTERVAL,
                 default=current.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
