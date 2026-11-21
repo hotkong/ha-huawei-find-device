@@ -317,7 +317,7 @@ makes it more likely to lose the session (and require pasting a new cookie).
 ## 赞赏 / Support
 
 <p align="center">
-  <a href="assets/about/wechat-reward.png"><img src="assets/about/wechat-reward.png" alt="微信赞赏码 / WeChat reward QR code" width="260"></a>
+  <a href="assets/about/wechat-reward-2026-11.png"><img src="assets/about/wechat-reward-2026-11.png" alt="微信赞赏码 / WeChat reward QR code" width="260"></a>
   <br>
   <strong>微信赞赏码 · WeChat</strong>
   <br>
