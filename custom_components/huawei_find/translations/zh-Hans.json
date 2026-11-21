@@ -141,7 +141,8 @@
       "verification_required": "华为要求该账号做二次验证。请改选「粘贴 Cookie」：在 cloud.huawei.com 登录后打开「查找设备」，再复制 Cookie 请求头。",
       "rate_limited": "登录尝试过于频繁，请等几分钟再试。反复请求可能导致账号被锁定。",
       "login_session_failed": "华为登录会话未建立完整（loginID 为空）。请重试；若持续出现，请改用「粘贴 Cookie」。",
-      "device_identity_error": "华为无法把本安装注册为登录设备。请重试；若持续失败，请改用「粘贴 Cookie」。"
+      "device_identity_error": "华为无法把本安装注册为登录设备。请重试；若持续失败，请改用「粘贴 Cookie」。",
+      "select_devices": "请至少选择一台要跟踪的设备。"
     },
     "abort": {
       "already_configured": "该华为账号已经添加过了。",

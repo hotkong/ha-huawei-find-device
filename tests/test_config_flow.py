@@ -11,9 +11,11 @@ from custom_components.huawei_find.config_flow import (
     _scan_interval_value,
 )
 from custom_components.huawei_find.const import (
+    CONF_DEVICES,
     CONF_DEVICE_ID,
     CONF_DEVICE_ID_BRIDGE,
     CONF_HW_PASSWORD,
+    CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     MAX_SCAN_INTERVAL,
 )
@@ -117,6 +119,35 @@ class AccountFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_browser_options_are_empty_when_no_browser_step_was_used(self):
         self.assertEqual(self._flow()._browser_options(), {})
+
+    async def test_empty_device_selection_is_rejected(self):
+        flow = self._flow()
+        flow._devices = [{"id": "d1", "name": "Phone", "is_shared": False}]
+
+        result = await flow.async_step_devices(
+            {CONF_DEVICES: [], CONF_SCAN_INTERVAL: 15}
+        )
+
+        self.assertEqual(result["errors"]["base"], "select_devices")
+
+    async def test_cookie_without_user_id_is_rejected(self):
+        from custom_components.huawei_find import config_flow
+
+        class Client:
+            user_id = None
+
+            async def async_get_devices(self):
+                return [{"id": "d1"}]
+
+            async def async_close(self):
+                return None
+
+        flow = self._flow()
+        with patch.object(config_flow, "HuaweiFindClient", return_value=Client()):
+            devices, error = await flow._validate_cookie("cookie")
+
+        self.assertIsNone(devices)
+        self.assertEqual(error, "invalid_auth")
 
     async def test_account_choice_reuses_the_first_registered_device(self):
         flow = self._flow()

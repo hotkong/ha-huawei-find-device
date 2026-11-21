@@ -141,7 +141,8 @@
       "verification_required": "Huawei asks this account for a verification code. Use \"Paste a Cookie\" instead: log in at cloud.huawei.com, open \"Find Device\", then copy the Cookie request header.",
       "rate_limited": "Too many sign-in attempts. Wait a few minutes before trying again; Huawei can lock the account when it is asked repeatedly.",
       "login_session_failed": "The Huawei sign-in session was lost before it completed (blank loginID). Try again; if it keeps happening, use \"Paste a Cookie\" instead.",
-      "device_identity_error": "Huawei could not register this installation as a login device. Try again; if it keeps failing, use \"Paste a Cookie\" instead."
+      "device_identity_error": "Huawei could not register this installation as a login device. Try again; if it keeps failing, use \"Paste a Cookie\" instead.",
+      "select_devices": "Select at least one device to track."
     },
     "abort": {
       "already_configured": "This Huawei account is already configured.",

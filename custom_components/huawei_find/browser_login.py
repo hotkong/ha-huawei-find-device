@@ -8,6 +8,7 @@ fresh cookie header. It never logs the password or the cookie value.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -158,8 +159,11 @@ async def async_browser_login(
                         f"browserless returned HTTP {response.status}"
                     )
                 data: dict[str, Any] = await response.json(content_type=None)
-    except aiohttp.ClientError as err:
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
         raise BrowserLoginError(f"cannot reach browserless: {err}") from err
+
+    if not isinstance(data, dict):
+        raise BrowserLoginError("browserless returned an unexpected response")
 
     cookie = str(data.get("cookieHeader") or "")
     if not data.get("ok") or not cookie_is_usable(cookie):

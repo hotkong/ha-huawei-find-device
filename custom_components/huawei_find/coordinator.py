@@ -254,13 +254,21 @@ async def async_refresh_device(
                 runtime.refreshing.discard(device_id)
 
             if result.get("status") == "ok" and runtime.geocode_provider != GEOCODE_NONE:
-                address = await async_reverse_geocode(
-                    hass,
-                    runtime.geocode_provider,
-                    runtime.amap_key,
-                    result["latitude"],
-                    result["longitude"],
-                )
+                try:
+                    address = await async_reverse_geocode(
+                        hass,
+                        runtime.geocode_provider,
+                        runtime.amap_key,
+                        result["latitude"],
+                        result["longitude"],
+                    )
+                except Exception as err:  # noqa: BLE001 - address is auxiliary
+                    _LOGGER.debug(
+                        "Reverse geocoding failed for %s: %s",
+                        device.get("name"),
+                        err,
+                    )
+                    address = None
                 # Only set when successful: a None must not wipe the merged address
                 if address:
                     result["address"] = address

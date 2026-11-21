@@ -147,10 +147,13 @@ async def _amap(
     try:
         async with session.get(AMAP_URL, params=params, timeout=_TIMEOUT) as response:
             data = await response.json(content_type=None)
-    except (aiohttp.ClientError, TimeoutError) as err:
+    except (aiohttp.ClientError, TimeoutError, ValueError) as err:
         _LOGGER.debug("AMap reverse geocode request failed: %s", err)
         return None
 
+    if not isinstance(data, dict):
+        _LOGGER.debug("AMap reverse geocode returned an unexpected payload")
+        return None
     if str(data.get("status")) != "1":
         _LOGGER.debug("AMap reverse geocode error: %s", data.get("info"))
         return None
@@ -186,10 +189,13 @@ async def _osm(hass: HomeAssistant, latitude: float, longitude: float) -> str | 
                 OSM_URL, params=params, headers=headers, timeout=_TIMEOUT
             ) as response:
                 data = await response.json(content_type=None)
-        except (aiohttp.ClientError, TimeoutError) as err:
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             _LOGGER.debug("OSM reverse geocode request failed: %s", err)
             return None
 
+    if not isinstance(data, dict):
+        _LOGGER.debug("OSM reverse geocode returned an unexpected payload")
+        return None
     if "error" in data:
         _LOGGER.debug("OSM reverse geocode error: %s", data["error"])
         return None
@@ -219,10 +225,13 @@ async def _huawei(
             timeout=_TIMEOUT,
         ) as response:
             data = await response.json(content_type=None)
-    except (aiohttp.ClientError, TimeoutError) as err:
+    except (aiohttp.ClientError, TimeoutError, ValueError) as err:
         _LOGGER.debug("Huawei reverse geocode request failed: %s", err)
         return None
 
+    if not isinstance(data, dict):
+        _LOGGER.debug("Huawei reverse geocode returned an unexpected payload")
+        return None
     if str(data.get("returnCode")) != "0":
         _LOGGER.debug("Huawei reverse geocode error: %s", data.get("returnCode"))
         return None

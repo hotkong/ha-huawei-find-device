@@ -69,7 +69,7 @@ battery and status on demand, or make the phone ring.
 
 把 `custom_components/huawei_find` 复制到 HA 配置目录的 `custom_components/` 下，重启。
 
-要求：Home Assistant 2024.6+，纯 Python，无额外依赖。
+要求：Home Assistant **2026.11+**（实测 2026.11.2），纯 Python，无额外依赖。
 
 ### 配置
 
@@ -280,7 +280,7 @@ resulting position.
 HACS → Integrations → ⋮ → Custom repositories → add this repo URL, category
 *Integration*. Or copy `custom_components/huawei_find` into your HA config and restart.
 
-Requirements: Home Assistant 2024.6+, no extra dependencies.
+Requirements: Home Assistant **2026.11+** (tested on 2026.11.2), no extra dependencies.
 
 ### Configuration
 

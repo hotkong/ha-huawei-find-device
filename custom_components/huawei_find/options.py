@@ -99,6 +99,9 @@ async def _async_heartbeat(hass: HomeAssistant, runtime: HuaweiFindRuntime) -> N
         _LOGGER.warning("Heartbeat failed: %s", err)
     else:
         runtime.heartbeat_ok = True
+        # A successful heartbeat proves the session recovered (for example after
+        # a transient 401), so allow periodic refreshes to run again.
+        runtime.reauth_requested = False
         previous_beat = runtime.last_heartbeat
         now = dt_util.utcnow()
         runtime.last_heartbeat = now

@@ -83,5 +83,47 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         amap.assert_not_called()
 
 
+class ProviderPayloadTests(unittest.IsolatedAsyncioTestCase):
+    class _Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        async def json(self, content_type=None):
+            if isinstance(self.payload, Exception):
+                raise self.payload
+            return self.payload
+
+    class _Context:
+        def __init__(self, response):
+            self.response = response
+
+        async def __aenter__(self):
+            return self.response
+
+        async def __aexit__(self, *args):
+            return False
+
+    class _Session:
+        def __init__(self, response):
+            self.response = response
+
+        def post(self, *args, **kwargs):
+            return ProviderPayloadTests._Context(self.response)
+
+    async def test_huawei_non_dict_payload_is_ignored(self):
+        session = self._Session(self._Response(["not", "a", "dict"]))
+        with patch.object(
+            geocode, "async_get_clientsession", return_value=session
+        ):
+            self.assertIsNone(await geocode._huawei(None, 31.2, 121.4))
+
+    async def test_huawei_bad_json_is_ignored(self):
+        session = self._Session(self._Response(ValueError("html")))
+        with patch.object(
+            geocode, "async_get_clientsession", return_value=session
+        ):
+            self.assertIsNone(await geocode._huawei(None, 31.2, 121.4))
+
+
 if __name__ == "__main__":
     unittest.main()

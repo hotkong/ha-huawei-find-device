@@ -164,6 +164,9 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         finally:
             self._user_id = client.user_id
             await client.async_close()
+        if not self._user_id:
+            _LOGGER.warning("Huawei Cloud cookie does not carry a user id")
+            return None, "invalid_auth"
         if not devices:
             return None, "no_devices"
         self._cookie = cookie
@@ -492,33 +495,35 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_devices(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            selected = user_input.get(CONF_DEVICES) or [
-                device["id"] for device in self._devices
-            ]
-            data: dict[str, Any] = {
-                CONF_COOKIE: self._cookie,
-                CONF_DEVICES: selected,
-                CONF_AUTH_TIME: dt_util.utcnow().isoformat(),
-            }
-            if self._pending_device_id:
-                data[CONF_DEVICE_ID] = self._pending_device_id
-            if self._pending_bridge_device_id:
-                data[CONF_DEVICE_ID_BRIDGE] = self._pending_bridge_device_id
-            return self.async_create_entry(
-                title=(
-                    f"{ENTRY_TITLE} ({self._user_id[-4:]})"
-                    if self._user_id
-                    else ENTRY_TITLE
-                ),
-                data=data,
-                options={
-                    CONF_SCAN_INTERVAL: _scan_interval_value(
-                        user_input.get(CONF_SCAN_INTERVAL)
+            selected = user_input.get(CONF_DEVICES) or []
+            if not selected:
+                errors["base"] = "select_devices"
+            else:
+                data: dict[str, Any] = {
+                    CONF_COOKIE: self._cookie,
+                    CONF_DEVICES: selected,
+                    CONF_AUTH_TIME: dt_util.utcnow().isoformat(),
+                }
+                if self._pending_device_id:
+                    data[CONF_DEVICE_ID] = self._pending_device_id
+                if self._pending_bridge_device_id:
+                    data[CONF_DEVICE_ID_BRIDGE] = self._pending_bridge_device_id
+                return self.async_create_entry(
+                    title=(
+                        f"{ENTRY_TITLE} ({self._user_id[-4:]})"
+                        if self._user_id
+                        else ENTRY_TITLE
                     ),
-                    **self._browser_options(),
-                },
-            )
+                    data=data,
+                    options={
+                        CONF_SCAN_INTERVAL: _scan_interval_value(
+                            user_input.get(CONF_SCAN_INTERVAL)
+                        ),
+                        **self._browser_options(),
+                    },
+                )
 
         options = [
             SelectOptionDict(
@@ -552,6 +557,7 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                     ),
                 }
             ),
+            errors=errors,
         )
 
     # -- re-authorization ---------------------------------------------------
