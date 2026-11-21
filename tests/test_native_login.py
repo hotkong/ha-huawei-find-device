@@ -343,5 +343,59 @@ class PortalUrlTests(unittest.TestCase):
         )
 
 
+class PortalDeviceRegistrationTests(unittest.IsolatedAsyncioTestCase):
+    """A stale installation identity is repaired once, without user input."""
+
+    class _Client:
+        def __init__(self, replies):
+            self.replies = list(replies)
+            self.calls = []
+
+        async def ajax(self, action, values, **kwargs):
+            self.calls.append(values.get("fp", ""))
+            return self.replies.pop(0)
+
+    async def _run(self, replies, device_id):
+        client = self._Client(replies)
+        result = await auth._register_portal_device(client, {}, device_id)
+        return result, client.calls
+
+    async def test_known_device_is_reused(self):
+        result, calls = await self._run([{"sid": DEVICE_ID}], DEVICE_ID)
+
+        self.assertEqual(result, (DEVICE_ID, False))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(fingerprint.device_id_of(calls[0]), DEVICE_ID)
+
+    async def test_first_login_registers_a_device(self):
+        fresh = "c" * 84
+        result, calls = await self._run([{"sid": fresh}], None)
+
+        self.assertEqual(result, (fresh, False))
+        self.assertEqual(len(calls), 1)
+        self.assertIsNone(fingerprint.device_id_of(calls[0]))
+
+    async def test_a_damaged_stored_id_is_repaired_automatically(self):
+        fresh = "d" * 84
+        result, calls = await self._run([{"sid": fresh}], "not-a-device-id")
+
+        self.assertEqual(result, (fresh, True))
+        self.assertEqual(len(calls), 1)
+        self.assertIsNone(fingerprint.device_id_of(calls[0]))
+
+    async def test_a_rejected_id_is_replaced_after_one_retry(self):
+        fresh = "e" * 84
+        result, calls = await self._run([{"sid": ""}, {"sid": fresh}], DEVICE_ID)
+
+        self.assertEqual(result, (fresh, True))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(fingerprint.device_id_of(calls[0]), DEVICE_ID)
+        self.assertIsNone(fingerprint.device_id_of(calls[1]))
+
+    async def test_a_failed_repair_raises_a_device_error(self):
+        with self.assertRaises(auth.HuaweiLoginDeviceError):
+            await self._run([{"sid": ""}, {"sid": ""}], DEVICE_ID)
+
+
 if __name__ == "__main__":
     unittest.main()

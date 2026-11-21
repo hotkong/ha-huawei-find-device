@@ -113,9 +113,6 @@ ACCOUNT_SCHEMA = vol.Schema(
         vol.Optional(CONF_LOGIN_ID, default=""): TextSelector(
             TextSelectorConfig(type=TextSelectorType.TEXT)
         ),
-        vol.Optional("reset_device", default=False): BooleanSelector(
-            BooleanSelectorConfig()
-        ),
     }
 )
 
@@ -188,11 +185,6 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
             password = user_input.get(CONF_HW_PASSWORD) or ""
             login_id = (user_input.get(CONF_LOGIN_ID) or "").strip() or None
             self._reauth_pending = step_id.startswith("reauth")
-            if user_input.get("reset_device"):
-                # Explicitly forget the old identity; fail-closed is the default,
-                # but the user needs a way out when Huawei no longer accepts it.
-                self._device_id = None
-                self._bridge_device_id = None
             try:
                 result = await auth.async_login(
                     account,

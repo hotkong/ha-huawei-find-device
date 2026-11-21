@@ -182,6 +182,7 @@ class HuaweiLoginResult:
     login_id: str | None = None
     device_id: str | None = None
     bridge_device_id: str | None = None
+    device_reset: bool = False
     cookies: dict[str, str] = field(default_factory=dict)
 
 
@@ -565,6 +566,61 @@ def _fingerprint_value(device_id: str | None) -> str:
         ) from err
 
 
+def _fingerprint_for(device_id: str | None) -> tuple[str, bool]:
+    """Return ``(fingerprint, reset)`` for a login attempt.
+
+    A damaged stored id is treated as "no id": the gateway then registers a new
+    device. ``reset`` tells the caller to store the newly issued id. A valid id
+    is reused unchanged; if the gateway rejects it, the caller does one fresh
+    registration before giving up.
+    """
+    if device_id is None:
+        return _fingerprint_value(None), False
+    try:
+        return _fingerprint_value(device_id), False
+    except HuaweiLoginDeviceError:
+        return _fingerprint_value(None), True
+
+
+async def _register_portal_device(
+    client: _Session,
+    tokens: dict[str, str],
+    device_id: str | None,
+) -> tuple[str, bool]:
+    """Register the portal login device, repairing a stale identity once."""
+    value, reset = _fingerprint_for(device_id)
+    registration = await client.ajax(
+        "dev",
+        {"fp": value, "reqClientType": "7", "loginChannel": "7000000"},
+        tokens=tokens,
+    )
+    issued = registration.get("sid")
+    issued = issued if isinstance(issued, str) else ""
+    if reset or device_id is None:
+        if not fingerprint.valid_device_id(issued):
+            raise HuaweiLoginDeviceError("the account gateway did not register a device")
+        return issued, reset
+    if issued == device_id:
+        return device_id, False
+
+    # Huawei no longer recognises the stored id. A user-initiated login may
+    # register a fresh one instead of dead-ending, but only once.
+    fallback = await client.ajax(
+        "dev",
+        {
+            "fp": _fingerprint_value(None),
+            "reqClientType": "7",
+            "loginChannel": "7000000",
+        },
+        tokens=tokens,
+    )
+    issued = fallback.get("sid")
+    issued = issued if isinstance(issued, str) else ""
+    if not fingerprint.valid_device_id(issued):
+        raise HuaweiLoginDeviceError("the account gateway rejected the stored device id")
+    return issued, True
+
+
 async def _register_device(
     client: _Session,
     base: dict[str, str],
@@ -579,13 +635,12 @@ async def _register_device(
     this client type its own device, which is what the page itself would have
     done on a first visit.
     """
-    reply = await client.ajax(
-        "dev", {**base, "fp": _fingerprint_value(device_id)}, tokens=tokens
-    )
+    value, reset = _fingerprint_for(device_id)
+    reply = await client.ajax("dev", {**base, "fp": value}, tokens=tokens)
     issued = reply.get("sid")
     if fingerprint.valid_device_id(issued):
         return issued
-    if device_id is None:
+    if device_id is None or reset:
         return None
     reply = await client.ajax(
         "dev", {**base, "fp": _fingerprint_value(None)}, tokens=tokens
@@ -950,31 +1005,16 @@ async def async_login(
         # action is ``dev`` on this module (``common/dev`` is the AMW alias), and
         # the portal-side client type is 7/7000000 here. A fingerprint with no
         # device id is a new device and the gateway allocates one.
-        registration = await client.ajax(
-            "dev",
-            {
-                "fp": _fingerprint_value(device_id),
-                "reqClientType": "7",
-                "loginChannel": "7000000",
-            },
-            tokens=tokens,
+        device_id, device_reset = await _register_portal_device(
+            client, tokens, device_id
         )
-        issued = registration.get("sid")
-        issued = issued if isinstance(issued, str) else ""
-        if device_id is None:
-            if not fingerprint.valid_device_id(issued):
-                raise HuaweiLoginDeviceError(
-                    "the account gateway did not register a device"
-                )
-            device_id = issued
-        elif issued != device_id:
-            # A stored id the gateway no longer recognises means this install
-            # would silently present a different device; stop instead and let the
-            # caller offer an explicit reset.
-            raise HuaweiLoginDeviceError(
-                "the account gateway rejected the stored device id"
+        if device_reset:
+            _LOGGER.warning(
+                "The previous Huawei login device identity was invalid or rejected; "
+                "a new one was registered"
             )
-        _LOGGER.debug("Huawei device registered: %s", bool(device_id))
+        else:
+            _LOGGER.debug("Huawei device registered: %s", bool(device_id))
 
         common = {
             "lowLogin": "",
@@ -1117,6 +1157,7 @@ async def async_login(
             login_id=chosen,
             device_id=device_id,
             bridge_device_id=bridge_device_id,
+            device_reset=device_reset,
             cookies=cookies,
         )
 

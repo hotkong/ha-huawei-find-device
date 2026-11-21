@@ -111,11 +111,7 @@
         "data": {
           "account": "华为账号（手机号或邮箱）",
           "password": "密码",
-          "login_id": "要登录的华为 ID（仅手机号绑定多个账号时填）",
-          "reset_device": "重置设备身份"
-        },
-        "data_description": {
-          "reset_device": "华为不再认可本安装的设备身份时勾选；会为本次安装重新注册一个新设备。"
+          "login_id": "要登录的华为 ID（仅手机号绑定多个账号时填）"
         }
       },
       "account_choice": {
@@ -131,11 +127,7 @@
         "data": {
           "account": "华为账号（手机号或邮箱）",
           "password": "密码",
-          "login_id": "要登录的华为 ID（仅手机号绑定多个账号时填）",
-          "reset_device": "重置设备身份"
-        },
-        "data_description": {
-          "reset_device": "华为不再认可本安装的设备身份时勾选；会为本次安装重新注册一个新设备。"
+          "login_id": "要登录的华为 ID（仅手机号绑定多个账号时填）"
         }
       }
     },
@@ -149,7 +141,7 @@
       "verification_required": "华为要求该账号做二次验证。请改选「粘贴 Cookie」：在 cloud.huawei.com 登录后打开「查找设备」，再复制 Cookie 请求头。",
       "rate_limited": "登录尝试过于频繁，请等几分钟再试。反复请求可能导致账号被锁定。",
       "login_session_failed": "华为登录会话未建立完整（loginID 为空）。请重试；若持续出现，请改用「粘贴 Cookie」。",
-      "device_identity_error": "华为不再认可本安装的设备身份，或该身份已损坏。请勾选「重置设备身份」后重新登录。"
+      "device_identity_error": "华为无法把本安装注册为登录设备。请重试；若持续失败，请改用「粘贴 Cookie」。"
     },
     "abort": {
       "already_configured": "该华为账号已经添加过了。",
