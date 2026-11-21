@@ -26,6 +26,7 @@ On a fresh device Huawei asks for one, which surfaces here as
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import random
@@ -595,13 +596,13 @@ async def _register_portal_device(
         tokens=tokens,
     )
     issued = registration.get("sid")
-    issued = issued if isinstance(issued, str) else ""
+    issued = issued.strip() if isinstance(issued, str) else ""
     if reset or device_id is None:
         if not fingerprint.valid_device_id(issued):
             raise HuaweiLoginDeviceError("the account gateway did not register a device")
         return issued, reset
-    if issued == device_id:
-        return device_id, False
+    if issued == device_id.strip():
+        return issued, False
 
     # Huawei no longer recognises the stored id. A user-initiated login may
     # register a fresh one instead of dead-ending, but only once.
@@ -615,7 +616,7 @@ async def _register_portal_device(
         tokens=tokens,
     )
     issued = fallback.get("sid")
-    issued = issued if isinstance(issued, str) else ""
+    issued = issued.strip() if isinstance(issued, str) else ""
     if not fingerprint.valid_device_id(issued):
         raise HuaweiLoginDeviceError("the account gateway rejected the stored device id")
     return issued, True
@@ -639,14 +640,14 @@ async def _register_device(
     reply = await client.ajax("dev", {**base, "fp": value}, tokens=tokens)
     issued = reply.get("sid")
     if fingerprint.valid_device_id(issued):
-        return issued
+        return issued.strip()
     if device_id is None or reset:
         return None
     reply = await client.ajax(
         "dev", {**base, "fp": _fingerprint_value(None)}, tokens=tokens
     )
     issued = reply.get("sid")
-    return issued if fingerprint.valid_device_id(issued) else None
+    return issued.strip() if fingerprint.valid_device_id(issued) else None
 
 
 async def _authorize_oauth_service(
@@ -707,7 +708,9 @@ async def _authorize_oauth_service(
     # are registered per client type, so the id the portal issued is unknown here:
     # the bridge answers an empty sid and the next call reports a blank session
     # (10000004). Registering one for this client type keeps the session valid.
-    bridge_id = await _register_device(client, base, tokens, device_id)
+    bridge_id = await _register_device(
+        client, base, tokens, bridge_device_id or device_id
+    )
 
     await client.ajax(
         "chkRisk",
@@ -911,7 +914,7 @@ class _Session:
             payload = json.loads(text)
         except ValueError as err:
             raise HuaweiLoginError(
-                f"account gateway returned non-JSON: {text[:120]}"
+                "account gateway returned non-JSON; the request may have been blocked"
             ) from err
         if not isinstance(payload, dict):
             raise HuaweiLoginError("account gateway returned an unexpected shape")
@@ -954,7 +957,7 @@ def _login_failure(
     return HuaweiLoginAuthError(f"{prefix} rejected: {code} {description}".strip())
 
 
-async def async_login(
+async def _async_login(
     account: str,
     password: str,
     *,
@@ -1144,11 +1147,11 @@ async def async_login(
         # attempt history so ordinary re-authentication is never refused.
         _attempts.pop(user_account, None)
         _LOGGER.debug(
-            "Huawei login ok: user=%s cookies=%d csrf=%s device=%s",
-            chosen or user_account,
+            "Huawei login ok: cookies=%d csrf=%s device=%s login_id=%s",
             len(cookies),
             bool(cookies.get("CSRFToken")),
             bool(device_id),
+            bool(chosen),
         )
         return HuaweiLoginResult(
             cookie=cookie_header,
@@ -1160,6 +1163,29 @@ async def async_login(
             device_reset=device_reset,
             cookies=cookies,
         )
+
+
+async def async_login(
+    account: str,
+    password: str,
+    *,
+    login_id: str | None = None,
+    seed_cookies: dict[str, str] | None = None,
+    device_id: str | None = None,
+    bridge_device_id: str | None = None,
+) -> HuaweiLoginResult:
+    """Log in, mapping transport failures to a normal login error."""
+    try:
+        return await _async_login(
+            account,
+            password,
+            login_id=login_id,
+            seed_cookies=seed_cookies,
+            device_id=device_id,
+            bridge_device_id=bridge_device_id,
+        )
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        raise HuaweiLoginError(f"cannot reach Huawei Cloud: {err}") from err
 
 
 def _succeeded(payload: dict[str, Any]) -> bool:

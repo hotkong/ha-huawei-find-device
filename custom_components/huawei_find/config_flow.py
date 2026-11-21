@@ -221,6 +221,13 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._pending_password = ""
                 self._pending_device_id = result.device_id
                 self._pending_bridge_device_id = result.bridge_device_id
+                # Keep the repaired/new identity in the flow state too: if the
+                # cookie validation below fails and the user retries, reusing it
+                # avoids registering yet another login device.
+                if result.device_id:
+                    self._device_id = result.device_id
+                if result.bridge_device_id:
+                    self._bridge_device_id = result.bridge_device_id
                 _, error = await self._validate_cookie(result.cookie)
                 if error:
                     errors["base"] = error
@@ -278,6 +285,13 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._pending_password = ""
                 self._pending_device_id = result.device_id
                 self._pending_bridge_device_id = result.bridge_device_id
+                # Keep the repaired/new identity in the flow state too: if the
+                # cookie validation below fails and the user retries, reusing it
+                # avoids registering yet another login device.
+                if result.device_id:
+                    self._device_id = result.device_id
+                if result.bridge_device_id:
+                    self._bridge_device_id = result.bridge_device_id
                 _, error = await self._validate_cookie(result.cookie)
                 if error:
                     errors["base"] = error
@@ -305,6 +319,10 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     def _browser_options(self) -> dict[str, Any]:
+        # No browser step was submitted (native account or paste path): keep the
+        # existing options instead of overwriting them with empty strings.
+        if not self._browser_input:
+            return {}
         if not self._browser_input.get("store_credentials", True):
             return {}
         return {
@@ -539,8 +557,10 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     # -- re-authorization ---------------------------------------------------
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         self._preview_step = "reauth_preview"
-        self._device_id = str(entry_data.get(CONF_DEVICE_ID) or "") or None
-        self._bridge_device_id = str(entry_data.get(CONF_DEVICE_ID_BRIDGE) or "") or None
+        self._device_id = str(entry_data.get(CONF_DEVICE_ID) or "").strip() or None
+        self._bridge_device_id = (
+            str(entry_data.get(CONF_DEVICE_ID_BRIDGE) or "").strip() or None
+        )
         return self.async_show_menu(
             step_id="reauth_confirm",
             menu_options=["reauth_paste", "reauth_browser", "reauth_account"],

@@ -94,6 +94,30 @@ class AccountFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(flow._pending_password, "")
         self.assertIsNone(login.await_args.kwargs["device_id"])
 
+    async def test_validate_failure_keeps_the_new_device_id_for_the_retry(self):
+        flow = self._flow()
+        flow._validate_cookie = AsyncMock(return_value=([], "cannot_connect"))
+        flow._async_set_unique_id = AsyncMock()
+        flow.async_step_devices = AsyncMock()
+        result_obj = auth.HuaweiLoginResult(
+            cookie="USER_ID=42; token=x",
+            device_id=DEVICE_ID,
+            bridge_device_id=BRIDGE_ID,
+        )
+        with patch.object(auth, "async_login", AsyncMock(return_value=result_obj)):
+            result = await flow.async_step_account(
+                {"account": "13800138000", "password": "pw", "login_id": ""}
+            )
+
+        self.assertEqual(result["errors"]["base"], "cannot_connect")
+        self.assertEqual(flow._device_id, DEVICE_ID)
+        self.assertEqual(flow._bridge_device_id, BRIDGE_ID)
+        self.assertEqual(flow._pending_device_id, DEVICE_ID)
+        flow.async_step_devices.assert_not_awaited()
+
+    async def test_browser_options_are_empty_when_no_browser_step_was_used(self):
+        self.assertEqual(self._flow()._browser_options(), {})
+
     async def test_account_choice_reuses_the_first_registered_device(self):
         flow = self._flow()
         self._prepare_success(flow)
@@ -218,6 +242,24 @@ class ReauthOwnershipTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data[CONF_DEVICE_ID], DEVICE_ID)
         self.assertEqual(data[CONF_DEVICE_ID_BRIDGE], BRIDGE_ID)
         self.assertNotIn(CONF_HW_PASSWORD, data)
+
+    def test_reauth_keeps_the_existing_browserless_options(self):
+        flow, entry = self._flow_with_entry("42")
+        entry.options = {
+            "browser_url": "http://browser:3000",
+            "browser_token": "token",
+            "username": "user",
+            "password": "pass",
+        }
+        flow._cookie = "USER_ID=42; token=x"
+
+        result = flow._finish_reauth()
+
+        self.assertEqual(result["reason"], "reauth_successful")
+        options = flow.hass.config_entries.async_update_entry.call_args.kwargs["options"]
+        self.assertEqual(options["browser_url"], "http://browser:3000")
+        self.assertEqual(options["username"], "user")
+        self.assertEqual(options["password"], "pass")
 
 
 class CopyConsistencyTests(unittest.TestCase):

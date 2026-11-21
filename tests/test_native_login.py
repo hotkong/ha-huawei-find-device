@@ -15,6 +15,9 @@ that the password cannot appear in a log line.
 import inspect
 import re
 import unittest
+from unittest.mock import AsyncMock, patch
+
+import aiohttp
 
 from custom_components.huawei_find import auth, fingerprint
 
@@ -344,7 +347,6 @@ class PortalUrlTests(unittest.TestCase):
 
 
 class PortalDeviceRegistrationTests(unittest.IsolatedAsyncioTestCase):
-    """A stale installation identity is repaired once, without user input."""
 
     class _Client:
         def __init__(self, replies):
@@ -395,6 +397,58 @@ class PortalDeviceRegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_failed_repair_raises_a_device_error(self):
         with self.assertRaises(auth.HuaweiLoginDeviceError):
             await self._run([{"sid": ""}, {"sid": ""}], DEVICE_ID)
+
+
+class NetworkFailureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_transport_errors_become_login_errors(self):
+        with patch.object(
+            auth,
+            "_async_login",
+            AsyncMock(side_effect=aiohttp.ClientError("dns failure")),
+        ):
+            with self.assertRaises(auth.HuaweiLoginError):
+                await auth.async_login("13800138000", "pw")
+
+
+class BridgeDeviceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bridge_registration_uses_the_stored_bridge_id(self):
+        class Client:
+            def __init__(self):
+                self.calls = []
+                self.trace = []
+
+            async def ajax(self, action, values, **kwargs):
+                self.calls.append((action, values))
+                if action == "login/getPageInfo":
+                    return {"pageToken": "p", "pageTokenKey": "k"}
+                if action == "chkRisk":
+                    if values.get("operType") == "12":
+                        return {"siteInfoList": [{"loginID": "login-1"}], "siteID": "1"}
+                    return {}
+                if action == "remoteLogin":
+                    return {
+                        "isSuccess": 1,
+                        "callbackURL": "https://cloud.huawei.com/cb?ticket=T",
+                    }
+                raise AssertionError(action)
+
+        client = Client()
+        bridge_id = "b" * 84
+        with patch.object(
+            auth, "_register_device", AsyncMock(return_value=bridge_id)
+        ) as register:
+            result = await auth._authorize_oauth_service(
+                client,
+                "https://id1.cloud.huawei.com/CAS/portal/loginAuth.html"
+                "?service=https%3A%2F%2Fcloud.huawei.com%2FhomeTransit",
+                "13800138000",
+                "pw",
+                "portal-device-id",
+                bridge_id,
+            )
+
+        self.assertEqual(result[1], bridge_id)
+        self.assertEqual(register.await_args.args[3], bridge_id)
 
 
 if __name__ == "__main__":
