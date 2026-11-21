@@ -255,5 +255,93 @@ class PasswordHandlingTests(unittest.TestCase):
         self.assertIsNone(auth.HuaweiLoginResult(cookie="a=b").device_id)
 
 
+class AccountIdentityTests(unittest.TestCase):
+    def test_plain_phone_gets_the_country_prefix(self):
+        self.assertEqual(
+            auth._login_accounts("13800138000"),
+            ("13800138000", "008613800138000"),
+        )
+
+    def test_plus_and_0086_phone_forms_are_normalised_once(self):
+        for account in (
+            "+86 138 0013 8000",
+            "008613800138000",
+            "8613800138000",
+            "138-0013-8000",
+        ):
+            with self.subTest(account=account):
+                self.assertEqual(
+                    auth._login_accounts(account),
+                    ("13800138000", "008613800138000"),
+                )
+
+    def test_email_is_not_prefixed_with_a_country_code(self):
+        self.assertEqual(
+            auth._login_accounts("someone@example.com"),
+            ("someone@example.com", "someone@example.com"),
+        )
+        self.assertEqual(
+            auth.normalise_account(" Someone@Example.com "),
+            "Someone@Example.com",
+        )
+
+
+class LoginFailureTests(unittest.TestCase):
+    def test_risk_control_is_rate_limited(self):
+        err = auth._login_failure("10000201", "")
+        self.assertIsInstance(err, auth.HuaweiLoginThrottled)
+
+    def test_blank_login_session_is_not_a_verification_code(self):
+        err = auth._login_failure("10000004", "login session value is blank")
+        self.assertIsInstance(err, auth.HuaweiLoginSessionError)
+        self.assertNotIsInstance(err, auth.HuaweiLoginCodeRequired)
+
+    def test_two_factor_codes_and_description_are_verification(self):
+        self.assertIsInstance(
+            auth._login_failure("70002080", ""), auth.HuaweiLoginCodeRequired
+        )
+        self.assertIsInstance(
+            auth._login_failure("", "twoFactorList required"),
+            auth.HuaweiLoginCodeRequired,
+        )
+
+    def test_other_failures_are_auth_errors(self):
+        self.assertIsInstance(
+            auth._login_failure("1107", "wrong password"), auth.HuaweiLoginAuthError
+        )
+
+
+class AccountChoiceIdentityTests(unittest.TestCase):
+    def test_choice_carries_the_ids_registered_before_the_choice(self):
+        err = auth.HuaweiLoginAccountChoice(
+            ["111", "222"],
+            device_id=DEVICE_ID,
+            bridge_device_id="b" * 84,
+        )
+        self.assertEqual(err.accounts, ["111", "222"])
+        self.assertEqual(err.device_id, DEVICE_ID)
+        self.assertEqual(err.bridge_device_id, "b" * 84)
+
+    def test_damaged_device_id_is_a_device_error(self):
+        with self.assertRaises(auth.HuaweiLoginDeviceError):
+            auth._fingerprint_value("not-a-device-id")
+
+
+class PortalUrlTests(unittest.TestCase):
+    def test_non_portal_redirects_are_rejected(self):
+        for url in (
+            "https://evil.example/homeTransit?code=1ST-1-abc",
+            "http://cloud.huawei.com/homeTransit?code=1ST-1-abc",
+        ):
+            with self.subTest(url=url):
+                self.assertIsNone(auth._oauth_redirect_target({"code": url}))
+
+    def test_trace_urls_drop_the_query(self):
+        self.assertEqual(
+            auth._trace_url("https://cloud.huawei.com/homeTransit?code=1ST-1-secret"),
+            "https://cloud.huawei.com/homeTransit",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

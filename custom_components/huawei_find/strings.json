@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Huawei Cloud",
-        "description": "Choose how to authenticate: paste a Cookie from the [cloud.huawei.com](https://cloud.huawei.com/) Find Device request header, or get one through browserless.",
+        "description": "Choose how to authenticate: paste a Cookie from the [cloud.huawei.com](https://cloud.huawei.com/) Find Device request header, get one through browserless, or sign in with your Huawei account.",
         "menu_options": {
           "paste": "Paste a Cookie",
           "browser": "Get a Cookie with a browser",
@@ -20,7 +20,7 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate Huawei Cloud",
-        "description": "Paste a Cookie, or tick browser login; both methods stay on this page.",
+        "description": "Choose how to renew this account's session: paste a new Cookie, use browserless, or sign in with the Huawei account.",
         "menu_options": {
           "reauth_paste": "Paste a new Cookie",
           "reauth_browser": "Get a Cookie with a browser",
@@ -111,7 +111,8 @@
         "data": {
           "account": "Huawei account (phone number or email)",
           "password": "Password",
-          "login_id": "Huawei ID to sign in as (only when the number has several)"
+          "login_id": "Huawei ID to sign in as (only when the number has several)",
+          "reset_device": "Reset device identity"
         }
       },
       "account_choice": {
@@ -128,7 +129,7 @@
           "account": "Huawei account (phone number or email)",
           "password": "Password",
           "login_id": "Huawei ID to sign in as (only when the number has several)",
-          "device_fp": "Device fingerprint (optional)"
+          "reset_device": "Reset device identity"
         }
       }
     },
@@ -140,7 +141,9 @@
       "browser_login_invalid": "Browser URL, Huawei account and password are required.",
       "browser_login_failed": "Browser login failed: {error}",
       "verification_required": "Huawei asks this account for a verification code. Use \"Paste a Cookie\" instead: log in at cloud.huawei.com, open \"Find Device\", then copy the Cookie request header.",
-      "rate_limited": "Too many sign-in attempts. Wait a few minutes before trying again; Huawei can lock the account when it is asked repeatedly."
+      "rate_limited": "Too many sign-in attempts. Wait a few minutes before trying again; Huawei can lock the account when it is asked repeatedly.",
+      "login_session_failed": "The Huawei sign-in session was lost before it completed (blank loginID). Try again; if it keeps happening, use \"Paste a Cookie\" instead.",
+      "device_identity_error": "Huawei no longer recognizes this installation's device identity, or it is damaged. Tick \"Reset device identity\" and sign in again."
     },
     "abort": {
       "already_configured": "This Huawei account is already configured.",

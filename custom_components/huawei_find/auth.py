@@ -107,8 +107,12 @@ XHR_HEADERS = {
 
 # Errors that mean "Huawei wants another factor", not "wrong password".
 _CHALLENGE_CODES = frozenset(
-    {"10012072", "70002080", "70008800", "70008804", "10000004"}
+    {"10012072", "70002080", "70008800", "70008804"}
 )
+
+# The account gateway answers this when the loginID was not selected before
+# remoteLogin. It is a protocol/session error, not a verification challenge.
+_SESSION_CODES = frozenset({"10000004"})
 
 # Risk control. Huawei answers these when one account is signed in too often in
 # a short window, and after enough of them it can lock the account for a while,
@@ -131,6 +135,14 @@ class HuaweiLoginAuthError(HuaweiLoginError):
     """Huawei rejected the account or password."""
 
 
+class HuaweiLoginSessionError(HuaweiLoginError):
+    """The gateway lost the login session (for example a blank loginID)."""
+
+
+class HuaweiLoginDeviceError(HuaweiLoginError):
+    """The installation's device identity is invalid or no longer accepted."""
+
+
 class HuaweiLoginCodeRequired(HuaweiLoginError):
     """Huawei demands a verification code for this account/device."""
 
@@ -140,11 +152,24 @@ class HuaweiLoginThrottled(HuaweiLoginCodeRequired):
 
 
 class HuaweiLoginAccountChoice(HuaweiLoginError):
-    """The phone is bound to several accounts and one must be chosen."""
+    """The phone is bound to several accounts and one must be chosen.
 
-    def __init__(self, accounts: list[str]) -> None:
+    The same exception carries the device ids registered before the choice was
+    requested, so the next attempt can reuse them instead of registering a
+    second device for the same installation.
+    """
+
+    def __init__(
+        self,
+        accounts: list[str],
+        *,
+        device_id: str | None = None,
+        bridge_device_id: str | None = None,
+    ) -> None:
         super().__init__("account choice required: " + ", ".join(accounts))
         self.accounts = accounts
+        self.device_id = device_id
+        self.bridge_device_id = bridge_device_id
 
 
 @dataclass(slots=True)
@@ -170,15 +195,29 @@ def _base_params() -> dict[str, str]:
     }
 
 
+def _login_accounts(account: str) -> tuple[str, str]:
+    """Return ``(account, account_with_country_code)`` for the gateway requests.
+
+    The gateway wants the local phone number on most calls, but the bound-account
+    list (``chkRisk`` with ``operType 12``) uses the ``0086`` form. Email accounts
+    are passed through unchanged instead of being prefixed with a country code.
+    """
+    text = (account or "").strip().replace(" ", "")
+    if "@" in text:
+        return text, text
+    digits = _DIGITS.sub("", text)
+    if len(digits) >= 5 and re.fullmatch(r"[+\d\s-]+", text):
+        if digits.startswith("0086"):
+            digits = digits[4:]
+        elif digits.startswith("86") and len(digits) >= 13:
+            digits = digits[2:]
+        return digits, "0086" + digits
+    return text, text
+
+
 def normalise_account(account: str) -> str:
     """Return the digits of a phone account, or the text for mail/alias."""
-    text = (account or "").strip().replace(" ", "")
-    digits = _DIGITS.sub("", text)
-    if "@" in text:
-        return text
-    if len(digits) >= 5 and text.lstrip("+").isdigit():
-        return digits
-    return text
+    return _login_accounts(account)[0]
 
 
 def _portal_cookies(jar: aiohttp.CookieJar) -> dict[str, str]:
@@ -196,6 +235,12 @@ def _query_value(url: str, name: str) -> str | None:
     """Return one query parameter from a URL, or None."""
     values = parse_qs(urlsplit(url).query).get(name)
     return values[0] if values else None
+
+
+def _trace_url(url: str) -> str:
+    """A trace-friendly URL: no query string, so no tickets or codes."""
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}"[:96]
 
 
 async def _complete_oauth_authorization(
@@ -282,15 +327,12 @@ async def _complete_oauth_authorization(
     ) as hop:
         final_url = str(hop.url)
         hop_status = hop.status
-        hop_text = await hop.text()
+        await hop.read()
     client.trace.append(
         {
             "url": "oauth:casLoginRedirect",
             "status": hop_status,
             "via": "get",
-            "final": final_url[:300],
-            "hops": [f"{h.status} {h.headers.get('Location', '')[:160]}" for h in hop.history],
-            "body": hop_text[:300],
         }
     )
 
@@ -330,7 +372,6 @@ async def _complete_oauth_authorization(
                 "url": "oauth:ticketCallback",
                 "status": consum_status,
                 "via": "get",
-                "final": consum_url[:200],
             }
         )
         if _landed_on_portal(consum_url):
@@ -356,7 +397,6 @@ async def _complete_oauth_authorization(
             "url": "oauth:ajaxLogin",
             "status": login_status,
             "via": "post",
-            "body": login_text[:600],
         }
     )
     if login_status >= 400:
@@ -388,7 +428,6 @@ async def _complete_oauth_authorization(
             "url": "oauth:homeTransit",
             "status": trans_status,
             "via": "get",
-            "final": trans_url[:200],
         }
     )
     if not _landed_on_portal(trans_url):
@@ -405,6 +444,12 @@ def _landed_on_portal(url: str) -> bool:
     sign-in.
     """
     return (urlsplit(url).hostname or "") == "cloud.huawei.com"
+
+
+def _allowed_portal_url(url: str) -> bool:
+    """Only follow HTTPS URLs that belong to the portal itself."""
+    parts = urlsplit(url)
+    return parts.scheme == "https" and (parts.hostname or "") == "cloud.huawei.com"
 
 
 def _oauth_error(payload: Any) -> str | None:
@@ -429,7 +474,14 @@ def _oauth_error(payload: Any) -> str | None:
         if not value.startswith(("http://", "https://")):
             continue
         query = parse_qs(urlsplit(value).query)
-        for key in ("error", "error_code", "errorCode", "error_description", "errorDesc"):
+        for key in (
+            "error",
+            "error_code",
+            "errorCode",
+            "error_description",
+            "errorDesc",
+            "sub_error",
+        ):
             for item in query.get(key) or []:
                 if item.strip():
                     parts.append(f"{key}={item.strip()[:120]}")
@@ -463,7 +515,7 @@ def _oauth_redirect_target(payload: Any) -> str | None:
         for name, value in payload.items()
         if isinstance(value, str)
         and "error" not in name.lower()
-        and value.strip().startswith(("http://", "https://"))
+        and _allowed_portal_url(value.strip())
     ]
     if len(urls) == 1:
         _LOGGER.warning(
@@ -490,13 +542,27 @@ def _oauth_redirect_target(payload: Any) -> str | None:
 
 
 def _redirect_from_value(value: Any) -> str | None:
-    """Turn one reply field into the URL that finishes the sign-in."""
+    """Turn one reply field into the URL that finishes the sign-in.
+
+    Absolute URLs are only accepted for the portal host; a reply must not be able
+    to make the integration fetch an arbitrary URL.
+    """
     if not isinstance(value, str) or not value.strip():
         return None
     value = value.strip()
     if value.startswith(("http://", "https://")):
-        return value
+        return value if _allowed_portal_url(value) else None
     return f"{OAUTH_REDIRECT_URI}?code={quote(value, safe='')}"
+
+
+def _fingerprint_value(device_id: str | None) -> str:
+    """Build a fingerprint, converting a damaged stored id into a login error."""
+    try:
+        return fingerprint.mint(device_id)
+    except ValueError as err:
+        raise HuaweiLoginDeviceError(
+            "the stored device identity is invalid; reset it and sign in again"
+        ) from err
 
 
 async def _register_device(
@@ -514,7 +580,7 @@ async def _register_device(
     done on a first visit.
     """
     reply = await client.ajax(
-        "dev", {**base, "fp": fingerprint.mint(device_id)}, tokens=tokens
+        "dev", {**base, "fp": _fingerprint_value(device_id)}, tokens=tokens
     )
     issued = reply.get("sid")
     if fingerprint.valid_device_id(issued):
@@ -522,7 +588,7 @@ async def _register_device(
     if device_id is None:
         return None
     reply = await client.ajax(
-        "dev", {**base, "fp": fingerprint.mint(None)}, tokens=tokens
+        "dev", {**base, "fp": _fingerprint_value(None)}, tokens=tokens
     )
     issued = reply.get("sid")
     return issued if fingerprint.valid_device_id(issued) else None
@@ -550,6 +616,7 @@ async def _authorize_oauth_service(
         return values[0] if values and values[0] else default
 
     service = pick("service", OAUTH_REDIRECT_URI)
+    _, prefixed_account = _login_accounts(user_account)
     base = {
         "reqClientType": pick("reqClientType", REQUEST_CLIENT_TYPE),
         "loginChannel": pick("loginChannel", LOGIN_CHANNEL),
@@ -608,7 +675,7 @@ async def _authorize_oauth_service(
         "chkRisk",
         {
             **base,
-            "userAccount": "0086" + user_account,
+            "userAccount": prefixed_account,
             "operType": "12",
             "lowLogin": "",
             "scope": PORTAL_SCOPE,
@@ -627,7 +694,9 @@ async def _authorize_oauth_service(
     chosen = login_id
     if len(entries) > 1:
         if not chosen or chosen not in entries:
-            raise HuaweiLoginAccountChoice(entries)
+            raise HuaweiLoginAccountChoice(
+                entries, device_id=device_id, bridge_device_id=bridge_id
+            )
     elif entries:
         chosen = chosen or entries[0]
 
@@ -647,9 +716,10 @@ async def _authorize_oauth_service(
             tokens=tokens,
         )
         if not _succeeded(selected):
-            raise HuaweiLoginError(
-                "authorization step could not select the login id: "
-                f"{selected.get('errorCode')} {selected.get('errorDesc')}".strip()
+            raise _login_failure(
+                selected.get("errorCode"),
+                selected.get("errorDesc"),
+                prefix="account selection",
             )
 
     login = await client.ajax(
@@ -670,6 +740,13 @@ async def _authorize_oauth_service(
         },
         with_tokens=False,
     )
+
+    if not _succeeded(login):
+        raise _login_failure(
+            login.get("errorCode"),
+            login.get("errorDesc"),
+            prefix="authorization step",
+        )
 
     callback = login.get("callbackURL")
     if not isinstance(callback, str) or not callback:
@@ -708,7 +785,9 @@ class _Session:
             timeout=aiohttp.ClientTimeout(total=30),
             **kwargs,
         )
-        self.trace.append({"url": url[:96], "status": response.status, "via": "get"})
+        self.trace.append(
+            {"url": _trace_url(url), "status": response.status, "via": "get"}
+        )
         return response
 
     async def post_json(self, url: str, payload: dict[str, Any]) -> int:
@@ -732,7 +811,9 @@ class _Session:
         ) as response:
             await response.read()
             status = response.status
-        self.trace.append({"url": url[:96], "status": status, "via": "post-json"})
+        self.trace.append(
+            {"url": _trace_url(url), "status": status, "via": "post-json"}
+        )
         return status
 
     async def ajax(
@@ -796,12 +877,33 @@ def _record_attempt(account: str) -> None:
     _attempts[account] = recent
 
 
+def _login_failure(
+    code: Any, description: Any, *, prefix: str = "login"
+) -> HuaweiLoginError:
+    """Map a gateway failure to the exception the config flow can explain."""
+    code = str(code or "").strip()
+    description = str(description or "").strip()
+    if code in _RISK_CODES:
+        return HuaweiLoginThrottled(
+            f"risk control refused the sign-in ({code}); wait and try again"
+        )
+    if code in _SESSION_CODES:
+        return HuaweiLoginSessionError(
+            f"{prefix} failed: the login session is blank ({code}); "
+            "select the Huawei ID and try again"
+        )
+    if code in _CHALLENGE_CODES or "twoFactorList" in description:
+        return HuaweiLoginCodeRequired(
+            f"verification code required ({code or 'unknown'})"
+        )
+    return HuaweiLoginAuthError(f"{prefix} rejected: {code} {description}".strip())
+
+
 async def async_login(
     account: str,
     password: str,
     *,
     login_id: str | None = None,
-    timeout: int = 30,
     seed_cookies: dict[str, str] | None = None,
     device_id: str | None = None,
     bridge_device_id: str | None = None,
@@ -816,7 +918,7 @@ async def async_login(
     if not account or not password:
         raise HuaweiLoginAuthError("account and password are required")
 
-    user_account = normalise_account(account)
+    user_account, prefixed_account = _login_accounts(account)
     _record_attempt(user_account)
 
     jar = aiohttp.CookieJar(unsafe=True)
@@ -851,7 +953,7 @@ async def async_login(
         registration = await client.ajax(
             "dev",
             {
-                "fp": fingerprint.mint(device_id),
+                "fp": _fingerprint_value(device_id),
                 "reqClientType": "7",
                 "loginChannel": "7000000",
             },
@@ -861,12 +963,17 @@ async def async_login(
         issued = issued if isinstance(issued, str) else ""
         if device_id is None:
             if not fingerprint.valid_device_id(issued):
-                raise HuaweiLoginError("the account gateway did not register a device")
+                raise HuaweiLoginDeviceError(
+                    "the account gateway did not register a device"
+                )
             device_id = issued
         elif issued != device_id:
             # A stored id the gateway no longer recognises means this install
-            # would silently present a different device; stop instead.
-            raise HuaweiLoginError("the account gateway rejected the stored device id")
+            # would silently present a different device; stop instead and let the
+            # caller offer an explicit reset.
+            raise HuaweiLoginDeviceError(
+                "the account gateway rejected the stored device id"
+            )
         _LOGGER.debug("Huawei device registered: %s", bool(device_id))
 
         common = {
@@ -884,7 +991,7 @@ async def async_login(
         with_prefix = await client.ajax(
             "chkRisk",
             {
-                "userAccount": "0086" + user_account,
+                "userAccount": prefixed_account,
                 "operType": "12",
                 "lowLogin": "",
                 "scope": PORTAL_SCOPE,
@@ -903,10 +1010,8 @@ async def async_login(
 
         chosen = login_id
         if len(accounts) > 1:
-            if not chosen:
-                raise HuaweiLoginAccountChoice(accounts)
-            if chosen not in accounts:
-                raise HuaweiLoginAccountChoice(accounts)
+            if not chosen or chosen not in accounts:
+                raise HuaweiLoginAccountChoice(accounts, device_id=device_id)
         elif accounts:
             chosen = chosen or accounts[0]
 
@@ -947,19 +1052,7 @@ async def async_login(
         )
 
         if not _succeeded(login):
-            code = str(login.get("errorCode") or "")
-            description = str(login.get("errorDesc") or "")
-            if code in _RISK_CODES:
-                raise HuaweiLoginThrottled(
-                    f"risk control refused the sign-in ({code}); wait and try again"
-                )
-            if code in _CHALLENGE_CODES or "twoFactorList" in description:
-                raise HuaweiLoginCodeRequired(
-                    f"verification code required ({code or 'unknown'})"
-                )
-            raise HuaweiLoginAuthError(
-                f"login rejected: {code} {description}".strip()
-            )
+            raise _login_failure(login.get("errorCode"), login.get("errorDesc"))
 
         callback = login.get("callbackURL")
         if not isinstance(callback, str) or not callback:

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "连接华为云",
-        "description": "选择认证方式：从 [cloud.huawei.com](https://cloud.huawei.com/) 的「查找设备」请求头粘贴 Cookie，或用 browserless 登录获取。",
+        "description": "选择认证方式：从 [cloud.huawei.com](https://cloud.huawei.com/) 的「查找设备」请求头粘贴 Cookie，用 browserless 登录获取，或直接用华为账号密码登录。",
         "menu_options": {
           "paste": "粘贴 Cookie",
           "browser": "用浏览器获取 Cookie",
@@ -20,7 +20,7 @@
       },
       "reauth_confirm": {
         "title": "重新授权华为云",
-        "description": "粘贴 Cookie，或勾选使用浏览器登录；两种方式在同一页切换，不会跳走。",
+        "description": "选择续期方式：粘贴新 Cookie、用 browserless 获取，或用华为账号密码重新登录。",
         "menu_options": {
           "reauth_paste": "粘贴新 Cookie",
           "reauth_browser": "用浏览器获取 Cookie",
@@ -111,7 +111,11 @@
         "data": {
           "account": "华为账号（手机号或邮箱）",
           "password": "密码",
-          "login_id": "要登录的华为 ID（仅手机号绑定多个账号时填）"
+          "login_id": "要登录的华为 ID（仅手机号绑定多个账号时填）",
+          "reset_device": "重置设备身份"
+        },
+        "data_description": {
+          "reset_device": "华为不再认可本安装的设备身份时勾选；会为本次安装重新注册一个新设备。"
         }
       },
       "account_choice": {
@@ -128,7 +132,10 @@
           "account": "华为账号（手机号或邮箱）",
           "password": "密码",
           "login_id": "要登录的华为 ID（仅手机号绑定多个账号时填）",
-          "device_fp": "设备指纹（可选）"
+          "reset_device": "重置设备身份"
+        },
+        "data_description": {
+          "reset_device": "华为不再认可本安装的设备身份时勾选；会为本次安装重新注册一个新设备。"
         }
       }
     },
@@ -140,7 +147,9 @@
       "browser_login_invalid": "浏览器地址、华为账号和密码都必须填写。",
       "browser_login_failed": "浏览器登录失败：{error}",
       "verification_required": "华为要求该账号做二次验证。请改选「粘贴 Cookie」：在 cloud.huawei.com 登录后打开「查找设备」，再复制 Cookie 请求头。",
-      "rate_limited": "登录尝试过于频繁，请等几分钟再试。反复请求可能导致账号被锁定。"
+      "rate_limited": "登录尝试过于频繁，请等几分钟再试。反复请求可能导致账号被锁定。",
+      "login_session_failed": "华为登录会话未建立完整（loginID 为空）。请重试；若持续出现，请改用「粘贴 Cookie」。",
+      "device_identity_error": "华为不再认可本安装的设备身份，或该身份已损坏。请勾选「重置设备身份」后重新登录。"
     },
     "abort": {
       "already_configured": "该华为账号已经添加过了。",

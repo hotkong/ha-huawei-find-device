@@ -113,6 +113,9 @@ ACCOUNT_SCHEMA = vol.Schema(
         vol.Optional(CONF_LOGIN_ID, default=""): TextSelector(
             TextSelectorConfig(type=TextSelectorType.TEXT)
         ),
+        vol.Optional("reset_device", default=False): BooleanSelector(
+            BooleanSelectorConfig()
+        ),
     }
 )
 
@@ -185,6 +188,11 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
             password = user_input.get(CONF_HW_PASSWORD) or ""
             login_id = (user_input.get(CONF_LOGIN_ID) or "").strip() or None
             self._reauth_pending = step_id.startswith("reauth")
+            if user_input.get("reset_device"):
+                # Explicitly forget the old identity; fail-closed is the default,
+                # but the user needs a way out when Huawei no longer accepts it.
+                self._device_id = None
+                self._bridge_device_id = None
             try:
                 result = await auth.async_login(
                     account,
@@ -199,17 +207,26 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "rate_limited"
             except auth.HuaweiLoginAccountChoice as err:
                 self._accounts = list(err.accounts)
+                if err.device_id:
+                    self._device_id = err.device_id
+                if err.bridge_device_id:
+                    self._bridge_device_id = err.bridge_device_id
                 self._pending_account = account
                 self._pending_password = password
                 return await self.async_step_account_choice()
             except auth.HuaweiLoginCodeRequired:
                 errors["base"] = "verification_required"
+            except auth.HuaweiLoginSessionError:
+                errors["base"] = "login_session_failed"
+            except (auth.HuaweiLoginDeviceError, ValueError):
+                errors["base"] = "device_identity_error"
             except auth.HuaweiLoginAuthError:
                 errors["base"] = "invalid_auth"
             except auth.HuaweiLoginError as err:
                 _LOGGER.warning("Huawei account sign-in failed: %s", err)
                 errors["base"] = "cannot_connect"
             else:
+                self._pending_password = ""
                 self._pending_device_id = result.device_id
                 self._pending_bridge_device_id = result.bridge_device_id
                 _, error = await self._validate_cookie(result.cookie)
@@ -246,15 +263,29 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
             except auth.HuaweiLoginThrottled:
                 errors["base"] = "rate_limited"
+            except auth.HuaweiLoginAccountChoice as err:
+                # The bound-account list changed between the two steps; show the
+                # updated choices instead of crashing the flow.
+                self._accounts = list(err.accounts)
+                if err.device_id:
+                    self._device_id = err.device_id
+                if err.bridge_device_id:
+                    self._bridge_device_id = err.bridge_device_id
             except auth.HuaweiLoginCodeRequired:
                 errors["base"] = "verification_required"
+            except auth.HuaweiLoginSessionError:
+                errors["base"] = "login_session_failed"
+            except (auth.HuaweiLoginDeviceError, ValueError):
+                errors["base"] = "device_identity_error"
             except auth.HuaweiLoginAuthError:
                 errors["base"] = "invalid_auth"
             except auth.HuaweiLoginError as err:
                 _LOGGER.warning("Huawei account sign-in failed: %s", err)
                 errors["base"] = "cannot_connect"
             else:
+                self._pending_password = ""
                 self._pending_device_id = result.device_id
+                self._pending_bridge_device_id = result.bridge_device_id
                 _, error = await self._validate_cookie(result.cookie)
                 if error:
                     errors["base"] = error
