@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 把华为云空间「查找设备」接入 Home Assistant：**点一个按钮，让设备立刻上报一次位置、电量与状态**，
-找回手机时还能让它响铃。
+找回设备时还能让它响铃；手表/手环/Tag/耳机还可停止响铃（手机无远程停止）。
 
 Trigger a Huawei Cloud *Find Device* query from Home Assistant — refresh a device's location,
 battery and status on demand, or make the phone ring.
@@ -31,13 +31,16 @@ battery and status on demand, or make the phone ring.
 - 定位传感器显示地址；配置了地址源后不再显示经纬度，反查失败时显示「地址解析失败」，坐标仍保留在属性里；
 - 每台设备一个 GPS 追踪器，可绑定到 `person`，在原生地图显示；
 - 电量、充电状态、上次定位状态各自独立成实体；
+- 自有手机额外提供网络名、网络类型（Wi-Fi/移动网络）和信号格数（Wi-Fi 0–4、移动网络 0–5）传感器；手机号不落库、不建实体；
 - 单次定位失败不会清空位置：沿用上次结果并标记为「过期」，HA 重启后也保留；
+- HA 设备页展示华为返回的型号、固件版本、序列号；接口不提供 MAC，不会伪造；
 - 在界面上禁用的设备会被自动跳过，不再无谓唤醒；
 - 配置完成后可随时在「配置」页面增删要跟踪的设备，被移除设备的实体与设备条目会自动清理。
 
 **找回手机**
 
-- 自有手机、手表、手环，以及带 `bell` 能力的耳机（如 FreeBuds Lipstick）各一个「响铃」按钮，触发最大音量警报，30 秒冷却，推送失败会自动重试一次；
+- 自有手机、手表、手环、HUAWEI Tag，以及带 `bell` 能力的耳机（如 FreeBuds Lipstick）各一个「响铃」按钮，触发最大音量警报，30 秒冷却，推送失败会自动重试一次；
+- 手表、手环、Tag 和带 `bell` 的耳机另有「停止响铃」按钮，调用 `portalStopBellReq`，不占 30 秒冷却；**手机没有远程停止入口**，不建该按钮；
 - 只对本账号自己的设备有效：家人共享的设备不支持。
 
 **自动化与维护**
@@ -78,7 +81,9 @@ battery and status on demand, or make the phone ring.
 
 > 必须从请求头复制：浏览器控制台里的 `document.cookie` 拿不到登录态的完整信息。
 
-> 不想手动复制？添加集成时先二选一：「粘贴 Cookie」或「用浏览器获取 Cookie」。选后者填 browserless 地址与华为账号密码，提交后会登录并把 Cookie 预填到确认页；确认后继续选设备即可。重新授权时也有同样入口。
+> 不想手动复制？添加集成时先二选一：「粘贴 Cookie」或「用浏览器获取 Cookie」。选后者填 browserless 地址与华为账号密码，提交后会登录并把 Cookie 预填到确认页；确认后继续选设备即可。
+>
+> 重新授权改成**单页**：同一页粘贴 Cookie，或勾选「使用浏览器登录」；HA 会恢复未完成的 reauth 子页，单页可避免切换后回不去。
 
 > **让 Cookie 更耐用的实测经验**：用**无痕窗口**打开 <https://cloud.huawei.com/> 登录并提取 Cookie，
 > **提取完尽快关闭无痕窗口**；之后不要在普通窗口再登录同一个华为账号，避免两边会话互相轮换、
@@ -95,13 +100,17 @@ battery and status on demand, or make the phone ring.
 |---|---|
 | `button.<account>_refresh_all_device_info` | 刷新全部设备信息（跳过已禁用设备；老装置仍为 `_refresh_all_locations`） |
 | `button.<device>_refresh_device_info` | 单台设备刷新设备信息（老装置仍为 `_refresh_location`） |
-| `button.<device>_ring` | 让设备响铃（仅自有设备、30 秒冷却、需设备在线） |
+| `button.<device>_ring` | 让设备响铃（手机/手表/手环/Tag/带 `bell` 的耳机；30 秒冷却） |
+| `button.<device>_stop_ring` | 停止响铃（仅手表/手环、Tag、带 `bell` 的耳机；手机无此项） |
 | `sensor.<device>_last_location` | 状态 = 地址；未配置地址源时才是 `纬度, 经度` |
-| `sensor.<device>_battery` | 电量（诊断类）；耳机为“最低电量”，取各组件最低值 |
+| `sensor.<device>_battery` | 电量（诊断类）；耳机为“最低电量”，取各组件最低值；Tag 同样可用 |
 | `sensor.<device>_left_earbud_battery` | 左耳电量（仅耳机；属性 `reported_at`、`stale`、`connect_type`） |
 | `sensor.<device>_right_earbud_battery` | 右耳电量（仅耳机） |
 | `sensor.<device>_charging_case_battery` | 充电盒电量（仅耳机且设备上报过充电盒；未上报时为 `unknown`） |
 | `binary_sensor.<device>_charging` | 充电状态（仅手机；手表/手环无此实体） |
+| `sensor.<device>_network` | 网络名（Wi-Fi SSID 或移动网络名；仅自有手机） |
+| `sensor.<device>_network_type` | 网络类型：Wi-Fi / 移动网络（仅自有手机） |
+| `sensor.<device>_network_signal` | 信号格数（Wi-Fi 0–4、移动网络 0–5；仅自有手机；属性含最大值与 stale） |
 | `sensor.<device>_last_locate_status` | 上次定位状态：成功 / 过期 / 未知（诊断类） |
 | `device_tracker.<device>` | GPS 追踪器，可绑定 `person` |
 | 服务 `huawei_find.refresh` | 不传 `device_id` 时刷新全部设备；传 HA 设备 ID 只刷新该设备；等请求完成才返回 |

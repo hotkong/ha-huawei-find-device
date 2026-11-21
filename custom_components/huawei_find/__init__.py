@@ -10,6 +10,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, SupportsResponse
@@ -45,6 +46,7 @@ from .coordinator import (  # noqa: F401  (re-exported for platforms and tests)
     _start_auto_refresh,
     async_refresh_device,
     async_ring_device,
+    async_stop_ring_device,
     enabled_device_ids,
 )
 from .helpers import (  # noqa: F401  (re-exported for platforms and tests)
@@ -52,12 +54,14 @@ from .helpers import (  # noqa: F401  (re-exported for platforms and tests)
     _interval_minutes,
     _make_cookie_listener,
     _notify_reauth,
+    build_device_info,
     device_identifiers,
     prune_removed_devices,
     serialize_cookies,
     signal_account,
     signal_update,
     supports_ring,
+    supports_stop_ring,
 )
 from .options import (  # noqa: F401  (re-exported for config flow and tests)
     _async_heartbeat,
@@ -109,6 +113,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         all_devices = await client.async_get_devices()
     except HuaweiFindAuthError as err:
         await client.async_close()
+        persistent_notification.async_create(
+            hass,
+            f"The Huawei Cloud session has expired ({err}).\n\n"
+            "Go to Settings > Devices & Services > Huawei Cloud Find Device "
+            "and click Re-authenticate, then paste a fresh Cookie.",
+            title="Huawei Cloud Find Device: re-authentication required",
+            notification_id=f"{DOMAIN}_reauth_{entry.entry_id}",
+        )
+        try:
+            entry.async_start_reauth(hass)
+        except Exception:  # noqa: BLE001 - never hide the original auth failure
+            _LOGGER.warning("Could not start reauth flow for %s", entry.title, exc_info=True)
         raise ConfigEntryAuthFailed(f"Huawei Cloud session expired: {err}") from err
     except HuaweiFindError as err:
         await client.async_close()

@@ -53,6 +53,9 @@ class LocateInfoTests(unittest.TestCase):
                     "batteryStatus": json.dumps(
                         {"isCharging": "0", "percentage": "12"}
                     ),
+                    "networkInfo": json.dumps(
+                        {"name": "tytcp_5G", "signal": "4", "type": "0"}
+                    ),
                     "isLockScreen": 1,
                 }
             )
@@ -65,6 +68,27 @@ class LocateInfoTests(unittest.TestCase):
         self.assertFalse(parsed["battery_charging"])
         self.assertTrue(parsed["screen_locked"])
         self.assertEqual(parsed["coordinate_system"], "wgs84")
+        self.assertEqual(parsed["network_name"], "tytcp_5G")
+        self.assertEqual(parsed["network_type"], "wifi")
+        self.assertEqual(parsed["network_signal"], 4)
+        self.assertEqual(parsed["network_signal_max"], 4)
+
+    def test_mobile_network_signal_uses_five_bars(self):
+        payload = {
+            "locateInfo": json.dumps(
+                {
+                    "latitude_WGS": 31.42,
+                    "longitude_WGS": 120.44,
+                    "networkInfo": json.dumps(
+                        {"name": "中国移动", "signal": "5", "type": "1"}
+                    ),
+                }
+            )
+        }
+        parsed = _parse_locate_info(payload)
+        self.assertEqual(parsed["network_type"], "mobile")
+        self.assertEqual(parsed["network_signal"], 5)
+        self.assertEqual(parsed["network_signal_max"], 5)
 
     def test_bd09_top_level_payload_is_converted(self):
         # The top-level latitude/longitude of the API are BD-09.
@@ -91,6 +115,10 @@ class MergeResultTests(unittest.TestCase):
             "longitude": 120.4,
             "address": "Somewhere",
             "located_at": None,
+            "network_name": "tytcp_5G",
+            "network_type": "wifi",
+            "network_signal": 4,
+            "network_signal_max": 4,
         }
 
     def test_failure_keeps_last_position(self):
@@ -101,6 +129,10 @@ class MergeResultTests(unittest.TestCase):
         self.assertEqual(merged["longitude"], 120.4)
         self.assertEqual(merged["address"], "Somewhere")
         self.assertTrue(merged["stale"])
+        self.assertEqual(merged["network_name"], "tytcp_5G")
+        self.assertEqual(merged["network_type"], "wifi")
+        self.assertEqual(merged["network_signal"], 4)
+        self.assertTrue(merged["network_stale"])
         self.assertEqual(merged["status"], "error")
         self.assertIn("last_attempt", merged)
 

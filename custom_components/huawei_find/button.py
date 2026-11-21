@@ -7,6 +7,7 @@ import asyncio
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -16,11 +17,13 @@ from . import (
     HuaweiFindRuntime,
     async_refresh_device,
     async_ring_device,
-    device_identifiers,
+    async_stop_ring_device,
+    build_device_info,
     enabled_device_ids,
     signal_account,
     signal_update,
     supports_ring,
+    supports_stop_ring,
 )
 from .const import CONF_AUTH_TIME, DOMAIN
 
@@ -31,11 +34,20 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     runtime: HuaweiFindRuntime = hass.data[DOMAIN][entry.entry_id]
+    registry = er.async_get(hass)
     entities: list[ButtonEntity] = [HuaweiRefreshAllButton(hass, runtime)]
     for device in runtime.devices.values():
         entities.append(HuaweiDeviceRefreshButton(hass, runtime, device))
         if supports_ring(device):
             entities.append(HuaweiRingButton(hass, runtime, device))
+        if supports_stop_ring(device):
+            entities.append(HuaweiStopRingButton(hass, runtime, device))
+            continue
+        # Phones have no remote-stop endpoint; remove buttons left by older builds.
+        unique_id = f"{DOMAIN}_{entry.entry_id}_{device['id']}_stop_ring"
+        entity_id = registry.async_get_entity_id("button", DOMAIN, unique_id)
+        if entity_id:
+            registry.async_remove(entity_id)
     async_add_entities(entities)
 
 
@@ -146,12 +158,7 @@ class HuaweiDeviceRefreshButton(ButtonEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
-            name=self._device.get("name") or "Huawei device",
-            manufacturer="Huawei",
-            model=self._device.get("model") or None,
-        )
+        return build_device_info(self._runtime.entry.entry_id, self._device)
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -177,6 +184,67 @@ class HuaweiDeviceRefreshButton(ButtonEntity):
         )
 
 
+class HuaweiStopRingButton(ButtonEntity):
+    """Stop the alarm sound on a device that is currently ringing."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_icon = "mdi:bell-off"
+    _attr_translation_key = "stop_ring"
+
+    def __init__(
+        self, hass: HomeAssistant, runtime: HuaweiFindRuntime, device: dict
+    ) -> None:
+        self.hass = hass
+        self._runtime = runtime
+        self._device = device
+        self._attr_unique_id = (
+            f"{DOMAIN}_{runtime.entry.entry_id}_{device['id']}_stop_ring"
+        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return build_device_info(self._runtime.entry.entry_id, self._device)
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_update(self._runtime.entry.entry_id, self._device["id"]),
+                self.async_write_ha_state,
+            )
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "device_id": self._device["id"],
+            "last_ring_error": self._runtime.ring_errors.get(self._device["id"]),
+        }
+
+    async def async_press(self) -> None:
+        self.hass.async_create_task(
+            self._stop(), f"huawei_find stop ring {self._device['id']}"
+        )
+
+    async def _stop(self) -> None:
+        from homeassistant.components import persistent_notification
+
+        result = await async_stop_ring_device(
+            self.hass, self._runtime, self._device["id"]
+        )
+        notification_id = f"{DOMAIN}_stop_ring_{self._device['id']}"
+        if not result.get("ok"):
+            persistent_notification.async_create(
+                self.hass,
+                f"{self._device.get('name')}: {result.get('error')}",
+                title="Huawei Cloud Find Device: stop ring failed",
+                notification_id=notification_id,
+            )
+        else:
+            persistent_notification.async_dismiss(self.hass, notification_id)
+
+
 class HuaweiRingButton(ButtonEntity):
     """Ask this device to play its alarm sound (find my phone)."""
 
@@ -195,12 +263,7 @@ class HuaweiRingButton(ButtonEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
-            name=self._device.get("name") or "Huawei device",
-            manufacturer="Huawei",
-            model=self._device.get("model") or None,
-        )
+        return build_device_info(self._runtime.entry.entry_id, self._device)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from custom_components.huawei_find.coordinator import async_ring_device
-from custom_components.huawei_find.helpers import supports_ring
+from custom_components.huawei_find.helpers import supports_ring, supports_stop_ring
 from custom_components.huawei_find.api import (
     HuaweiFindClient,
     HuaweiFindDeviceError,
@@ -74,6 +74,27 @@ class ChargingCapabilityTests(unittest.TestCase):
         from custom_components.huawei_find.helpers import supports_charging
         self.assertFalse(supports_charging({"per_device_type": "1"}))
 
+    def test_tag_has_no_charging(self):
+        from custom_components.huawei_find.helpers import supports_charging
+        self.assertFalse(supports_charging({"per_device_type": "3"}))
+
+
+class StopRingCapabilityTests(unittest.TestCase):
+    def test_phone_has_no_stop(self):
+        self.assertFalse(supports_stop_ring({"per_device_type": "0", "is_shared": False}))
+
+    def test_watch_has_stop(self):
+        self.assertTrue(supports_stop_ring({"per_device_type": "2", "is_shared": False}))
+
+    def test_tag_has_stop(self):
+        self.assertTrue(supports_stop_ring({"per_device_type": "3", "is_shared": False}))
+
+    def test_bell_earbuds_have_stop(self):
+        self.assertTrue(supports_stop_ring({"per_device_type": "1", "capability": ["bell"], "is_shared": False}))
+
+    def test_shared_has_no_stop(self):
+        self.assertFalse(supports_stop_ring({"per_device_type": "2", "is_shared": True}))
+
 
 class RingCapabilityTests(unittest.TestCase):
     def test_phone_can_ring(self):
@@ -84,6 +105,12 @@ class RingCapabilityTests(unittest.TestCase):
 
     def test_band_can_ring_when_owned(self):
         self.assertTrue(supports_ring({"per_device_type": "2", "is_shared": False}))
+
+    def test_tag_can_ring_when_owned(self):
+        self.assertTrue(supports_ring({"per_device_type": "3", "is_shared": False}))
+
+    def test_shared_tag_cannot_ring(self):
+        self.assertFalse(supports_ring({"per_device_type": "3", "is_shared": True}))
 
     def test_shared_cannot_ring(self):
         self.assertFalse(supports_ring({"per_device_type": "0", "is_shared": True}))

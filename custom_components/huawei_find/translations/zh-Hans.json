@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "连接华为云",
-        "description": "选择一种认证方式。",
+        "description": "选择认证方式：从 [cloud.huawei.com](https://cloud.huawei.com/) 的「查找设备」请求头粘贴 Cookie，或用 browserless 登录获取。",
         "menu_options": {
           "paste": "粘贴 Cookie",
           "browser": "用浏览器获取 Cookie"
@@ -19,10 +19,28 @@
       },
       "reauth_confirm": {
         "title": "重新授权华为云",
-        "description": "会话已失效，选择重新认证方式。",
+        "description": "粘贴 Cookie，或勾选使用浏览器登录；两种方式在同一页切换，不会跳走。",
         "menu_options": {
           "reauth_paste": "粘贴新 Cookie",
           "reauth_browser": "用浏览器获取 Cookie"
+        },
+        "data": {
+          "browser_login": "使用浏览器登录",
+          "cookie": "Cookie",
+          "browser_url": "browserless 地址",
+          "browser_token": "browserless Token",
+          "username": "华为账号",
+          "password": "密码",
+          "store_credentials": "保存浏览器凭据"
+        },
+        "data_description": {
+          "browser_login": "不勾选则直接粘贴 Cookie；勾选后填写下面的 browserless 和账号信息。",
+          "cookie": "从 cloud.huawei.com「查找设备」请求头复制完整 Cookie。",
+          "browser_url": "browserless v2 地址，例如 http://192.168.1.100:3000。",
+          "browser_token": "仅当 browserless 启用了 token 时填写。",
+          "username": "用于无头浏览器登录的华为账号。",
+          "password": "与账号一起明文保存在该条目的 .storage 中。",
+          "store_credentials": "取消勾选则本次不把凭据写入条目。"
         }
       },
       "init": {
@@ -45,7 +63,7 @@
       },
       "paste": {
         "title": "粘贴 Cookie",
-        "description": "在华为云「查找设备」页面按 F12 → Network，复制请求头里的 Cookie。",
+        "description": "在华为云「查找设备」页面（[cloud.huawei.com](https://cloud.huawei.com/)）按 F12 → Network，复制请求头里的 Cookie。",
         "data": {
           "cookie": "Cookie"
         }
@@ -68,7 +86,8 @@
         "title": "粘贴新 Cookie",
         "data": {
           "cookie": "Cookie"
-        }
+        },
+        "description": "在华为云「查找设备」页面（[cloud.huawei.com](https://cloud.huawei.com/)）按 F12 → Network，复制请求头里的新 Cookie。"
       },
       "reauth_browser": {
         "title": "用浏览器获取 Cookie",
@@ -79,6 +98,9 @@
           "username": "华为账号",
           "password": "华为密码",
           "store_credentials": "保存这些凭据用于以后自动重登"
+        },
+        "data_description": {
+          "store_credentials": "勾选后凭据会明文保存在该条目的 .storage 中。"
         }
       }
     },
@@ -127,7 +149,8 @@
           "browser_url": "仅在 Cookie 失效时使用。填 browserless v2 地址（如 http://192.168.1.100:3000），并填写下面的华为账号密码；验证码/短信仍需人工。",
           "browser_token": "仅当 browserless 启用了 token 时填写。",
           "username": "仅用于无头浏览器自动重登；不填则保持手动贴 Cookie。",
-          "password": "与账号一起明文保存在 HA .storage 中，请自行评估风险。"
+          "password": "与账号一起明文保存在 HA .storage 中，请自行评估风险。",
+          "scan_interval": "建议 10–20 分钟；0 表示关闭。"
         }
       }
     },
@@ -143,6 +166,9 @@
       },
       "ring": {
         "name": "响铃"
+      },
+      "stop_ring": {
+        "name": "停止响铃"
       }
     },
     "sensor": {
@@ -171,6 +197,19 @@
           "stale": "失败",
           "unknown": "未知"
         }
+      },
+      "network": {
+        "name": "网络"
+      },
+      "network_type": {
+        "name": "网络类型",
+        "state": {
+          "wifi": "Wi-Fi",
+          "mobile": "移动网络"
+        }
+      },
+      "network_signal": {
+        "name": "网络信号"
       }
     },
     "binary_sensor": {
@@ -201,6 +240,10 @@
         "cookie": {
           "name": "Cookie",
           "description": "完整的 Cookie 请求头值"
+        },
+        "entry_id": {
+          "name": "账号条目",
+          "description": "只配置了一个账号时可留空；多账号时从下拉选择。"
         }
       }
     },

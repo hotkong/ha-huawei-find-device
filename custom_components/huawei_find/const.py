@@ -9,6 +9,7 @@ EP_LOCATE = "/findDevice/locate"
 EP_QUERY = "/findDevice/queryLocateResult"
 EP_HEARTBEAT = "/heartbeatCheck"
 EP_BELL = "/findDevice/portalBellReq"
+EP_STOP_BELL = "/findDevice/portalStopBellReq"
 
 CONF_COOKIE = "cookie"
 CONF_DEVICES = "devices"

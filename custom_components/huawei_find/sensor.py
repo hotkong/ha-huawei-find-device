@@ -12,7 +12,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import HuaweiFindRuntime, device_identifiers, signal_update
+from . import HuaweiFindRuntime, build_device_info, signal_update
 from .const import (
     GEOCODE_NONE,
     ATTR_ACCURACY,
@@ -43,6 +43,17 @@ async def async_setup_entry(
         entities.append(HuaweiPositionStatusSensor(runtime, device))
         for component in battery_components(device):
             entities.append(HuaweiComponentBatterySensor(runtime, device, component))
+        if (
+            not device.get("is_shared")
+            and str(device.get("per_device_type") or "") == "0"
+        ):
+            entities.extend(
+                (
+                    HuaweiNetworkSensor(runtime, device),
+                    HuaweiNetworkTypeSensor(runtime, device),
+                    HuaweiNetworkSignalSensor(runtime, device),
+                )
+            )
     async_add_entities(entities)
 
 
@@ -65,12 +76,7 @@ class HuaweiLocationSensor(SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
-            name=self._device.get("name") or "Huawei device",
-            manufacturer="Huawei",
-            model=self._device.get("model") or None,
-        )
+        return build_device_info(self._runtime.entry.entry_id, self._device)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(
@@ -198,12 +204,7 @@ class HuaweiBatterySensor(SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
-            name=self._device.get("name") or "Huawei device",
-            manufacturer="Huawei",
-            model=self._device.get("model") or None,
-        )
+        return build_device_info(self._runtime.entry.entry_id, self._device)
 
     @staticmethod
     def _value_from(result: dict) -> int | None:
@@ -258,12 +259,7 @@ class HuaweiComponentBatterySensor(SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
-            name=self._device.get("name") or "Huawei device",
-            manufacturer="Huawei",
-            model=self._device.get("model") or None,
-        )
+        return build_device_info(self._runtime.entry.entry_id, self._device)
 
     def _component_result(self, result: dict) -> dict:
         batteries = result.get("batteries") or {}
@@ -305,6 +301,110 @@ class HuaweiComponentBatterySensor(SensorEntity):
         self.async_write_ha_state()
 
 
+class _HuaweiNetworkSensorBase(SensorEntity):
+    """Common plumbing for the owner-phone network sensors."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _suffix = "network"
+
+    def __init__(self, runtime: HuaweiFindRuntime, device: dict) -> None:
+        self._runtime = runtime
+        self._device = device
+        self._attr_unique_id = (
+            f"{DOMAIN}_{runtime.entry.entry_id}_{device['id']}_{self._suffix}"
+        )
+        result = runtime.results.get(device["id"], {})
+        self._attr_native_value = self._value_from(result)
+        self._attr_extra_state_attributes = self._build_attributes(result)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return build_device_info(self._runtime.entry.entry_id, self._device)
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                signal_update(self._runtime.entry.entry_id, self._device["id"]),
+                self._handle_update,
+            )
+        )
+
+    def _result(self) -> dict:
+        return self._runtime.results.get(self._device["id"], {})
+
+    def _value_from(self, result: dict):
+        raise NotImplementedError
+
+    @staticmethod
+    def _signal_icon(network_type: str | None, signal: int | None) -> str:
+        if signal is None:
+            return "mdi:network-outline"
+        bars = max(0, min(4, int(signal)))
+        if network_type == "wifi":
+            return "mdi:wifi-strength-outline" if bars == 0 else f"mdi:wifi-strength-{bars}"
+        if network_type == "mobile":
+            return "mdi:signal-cellular-outline" if bars == 0 else "mdi:signal"
+        return "mdi:network-outline"
+
+    @property
+    def icon(self) -> str:
+        result = self._result()
+        return self._signal_icon(result.get("network_type"), result.get("network_signal"))
+
+    @callback
+    def _handle_update(self) -> None:
+        result = self._result()
+        self._attr_native_value = self._value_from(result)
+        self._attr_extra_state_attributes = self._build_attributes(result)
+        self.async_write_ha_state()
+
+    def _build_attributes(self, result: dict) -> dict:
+        return {
+            "device_id": self._device["id"],
+            "network_type": result.get("network_type"),
+            "network_signal": result.get("network_signal"),
+            "network_signal_max": result.get("network_signal_max"),
+            "network_stale": result.get("network_stale"),
+            "status": result.get("status") or "pending",
+        }
+
+
+class HuaweiNetworkSensor(_HuaweiNetworkSensorBase):
+    """SSID (Wi-Fi) or network/carrier name."""
+
+    _attr_translation_key = "network"
+    _suffix = "network"
+
+    def _value_from(self, result: dict):
+        return result.get("network_name")
+
+
+class HuaweiNetworkTypeSensor(_HuaweiNetworkSensorBase):
+    """Wi-Fi vs mobile network, as an enum sensor."""
+
+    _attr_translation_key = "network_type"
+    _suffix = "network_type"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["wifi", "mobile"]
+
+    def _value_from(self, result: dict):
+        value = result.get("network_type")
+        return value if value in self._attr_options else None
+
+
+class HuaweiNetworkSignalSensor(_HuaweiNetworkSensorBase):
+    """Signal bars (0-4) reported by the phone."""
+
+    _attr_translation_key = "network_signal"
+    _suffix = "network_signal"
+
+    def _value_from(self, result: dict):
+        value = result.get("network_signal")
+        return value if isinstance(value, int) else None
+
+
 class HuaweiPositionStatusSensor(SensorEntity):
     """Status of the last locate attempt (ok / stale / unknown)."""
 
@@ -329,12 +429,7 @@ class HuaweiPositionStatusSensor(SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers=device_identifiers(self._runtime.entry.entry_id, self._device["id"]),
-            name=self._device.get("name") or "Huawei device",
-            manufacturer="Huawei",
-            model=self._device.get("model") or None,
-        )
+        return build_device_info(self._runtime.entry.entry_id, self._device)
 
     @staticmethod
     def _value_from(result: dict) -> str:

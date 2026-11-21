@@ -13,6 +13,7 @@ from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.storage import Store
 
 from .api import HuaweiFindClient
@@ -48,12 +49,45 @@ def device_identifiers(entry_id: str, device_id: str) -> set[tuple[str, str]]:
 
 
 def supports_ring(device: dict[str, Any]) -> bool:
-    """Own phones/wearables, plus devices that advertise the bell capability."""
+    """Own phones/wearables/tags, plus devices that advertise the bell capability."""
     if device.get("is_shared"):
         return False
-    if str(device.get("per_device_type") or "") in {"0", "2"}:
+    if str(device.get("per_device_type") or "") in {"0", "2", "3"}:
         return True
     return "bell" in (device.get("capability") or [])
+
+
+def supports_stop_ring(device: dict[str, Any]) -> bool:
+    """Only wearables, Tags and bell-capable earbuds have a remote stop."""
+    if device.get("is_shared"):
+        return False
+    if str(device.get("per_device_type") or "") in {"2", "3"}:
+        return True
+    return "bell" in (device.get("capability") or [])
+
+
+def build_device_info(entry_id: str, device: dict[str, Any]) -> DeviceInfo:
+    """Build HA device metadata from fields the Huawei API actually returns."""
+    category = str(device.get("category") or "").lower()
+    category_label = {
+        "phone": "Huawei phone",
+        "watch": "Huawei watch",
+        "band": "Huawei band",
+        "tag": "HUAWEI Tag",
+    }.get(category, category or None)
+    model = device.get("model") or category_label
+    info = DeviceInfo(
+        identifiers=device_identifiers(entry_id, device["id"]),
+        name=device.get("name") or "Huawei device",
+        manufacturer="Huawei",
+        model=model,
+        configuration_url="https://cloud.huawei.com/webFindPhone.html",
+    )
+    if device.get("firmware"):
+        info["sw_version"] = device["firmware"]
+    if device.get("serial_number"):
+        info["serial_number"] = device["serial_number"]
+    return info
 
 
 def signal_update(entry_id: str, device_id: str) -> str:
@@ -64,7 +98,7 @@ def signal_update(entry_id: str, device_id: str) -> str:
 def supports_charging(device: dict[str, Any]) -> bool:
     """Only phones report a charging flag; wearables and earbuds do not."""
     per_type = str(device.get("per_device_type") or "")
-    return per_type not in {"1", "2"}
+    return per_type in {"0", ""}
 
 
 def battery_components(device: dict[str, Any]) -> tuple[str, ...]:

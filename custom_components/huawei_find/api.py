@@ -29,6 +29,7 @@ import aiohttp
 from .const import (
     BATTERY_STALE_SECONDS,
     EP_BELL,
+    EP_STOP_BELL,
     HW_MODEL,
     BASE_URL,
     EP_DEVICE_LIST,
@@ -340,6 +341,15 @@ def _parse_locate_info(
     accuracy: Any = None
     device_time: Any = None
     battery_status = _json_dict(locate_info.get("batteryStatus"))
+    network_info = _json_dict(locate_info.get("networkInfo"))
+    network_name = str(network_info.get("name") or "").strip() or None
+    network_type_raw = str(network_info.get("type") or "")
+    network_type = {"0": "wifi", "1": "mobile"}.get(network_type_raw)
+    network_signal_raw = network_info.get("signal")
+    try:
+        network_signal = int(float(network_signal_raw)) if network_signal_raw not in (None, "") else None
+    except (TypeError, ValueError):
+        network_signal = None
 
     top_lat_wgs = _as_float(locate_info.get("latitude_WGS"))
     top_lng_wgs = _as_float(locate_info.get("longitude_WGS"))
@@ -442,6 +452,13 @@ def _parse_locate_info(
             result_stale or any(item["stale"] for item in batteries.values())
         ),
         "battery_charging": charging,
+        "network_name": network_name,
+        "network_type": network_type,
+        "network_signal": network_signal,
+        "network_signal_max": (
+            5 if network_type == "mobile" else 4
+        ) if network_signal is not None else None,
+        "network_stale": result_stale,
         "result_stale": result_stale,
         "result_time": _timestamp_iso(execute_time),
         "screen_locked": str(locate_info.get("isLockScreen")) == "1"
@@ -658,29 +675,67 @@ class HuaweiFindClient:
         if data["_code"] != 0:
             raise HuaweiFindError(f"Failed to fetch device list: {data.get('info') or data['_code']}")
 
-        devices: list[dict[str, Any]] = []
-        for raw in data.get("deviceList") or []:
+        def build_own(raw: dict[str, Any]) -> dict[str, Any] | None:
             device_id = raw.get("deviceId")
             if not device_id:
-                continue
-            devices.append(
-                {
-                    "id": device_id,
-                    "name": raw.get("deviceAliasName")
-                    or raw.get("deviceName")
-                    or raw.get("model")
-                    or "Huawei device",
-                    "model": raw.get("model") or raw.get("deviceTypeName") or "",
-                    "device_type": raw.get("deviceType") or 9,
-                    "per_device_type": str(raw.get("perDeviceType") or ""),
-                    "components": components_from_locate_result(
-                        raw.get("locateResult"), raw.get("perDeviceType")
-                    ),
-                    "capability": list(raw.get("capability") or []),
-                    "is_shared": False,
-                    "sender_user_id": "",
-                }
+                return None
+            per_info = _json_dict(raw.get("perDeviceTypeInfo"))
+            model = str(
+                raw.get("model")
+                or raw.get("deviceTypeName")
+                or per_info.get("ModelID")
+                or ""
             )
+            return {
+                "id": device_id,
+                "name": raw.get("deviceAliasName")
+                or raw.get("deviceName")
+                or raw.get("model")
+                or "Huawei device",
+                "model": model,
+                "category": str(raw.get("deviceCategory") or ""),
+                "firmware": str(raw.get("romVersion") or "") or None,
+                "app_version": str(raw.get("appVersion") or "") or None,
+                "serial_number": str(raw.get("deviceSn") or "") or None,
+                "device_type": raw.get("deviceType") or 9,
+                "per_device_type": str(raw.get("perDeviceType") or ""),
+                "components": components_from_locate_result(
+                    raw.get("locateResult"), raw.get("perDeviceType")
+                ),
+                "capability": list(raw.get("capability") or []),
+                "is_shared": False,
+                "sender_user_id": "",
+            }
+
+        devices: list[dict[str, Any]] = []
+        for raw in data.get("deviceList") or []:
+            device = build_own(raw)
+            if device is not None:
+                devices.append(device)
+
+        # tabLocation=1 is the "items" tab: HUAWEI Tag / find-my-item
+        # trackers. They are not in the phone/wearable tab, but locating and
+        # battery parsing use the same endpoints.
+        try:
+            items = await self._post(
+                EP_DEVICE_LIST,
+                {
+                    "traceId": trace_id(),
+                    "tabLocation": 1,
+                    "portalType": 0,
+                    "deviceType": 0,
+                },
+            )
+        except HuaweiFindAuthError:
+            raise
+        except HuaweiFindError as err:
+            _LOGGER.debug("Failed to fetch item devices (ignored): %s", err)
+            items = {}
+        if items.get("_code") == 0:
+            for raw in items.get("deviceList") or []:
+                device = build_own(raw)
+                if device is not None:
+                    devices.append(device)
 
         try:
             shared = await self._post(EP_SHARE_GRANTS, {"traceId": trace_id()})
@@ -701,6 +756,10 @@ class HuaweiFindClient:
                         "id": device_id,
                         "name": grant.get("senderDeviceName") or "Family device",
                         "model": grant.get("senderDeviceModel") or "",
+                        "category": "",
+                        "firmware": None,
+                        "app_version": None,
+                        "serial_number": None,
                         "device_type": grant.get("senderDeviceType") or 9,
                         "is_shared": True,
                         "sender_user_id": sender,
@@ -732,14 +791,17 @@ class HuaweiFindClient:
             payload["relationType"] = 2
         return payload
 
-    def _bell_payload(self, device: dict[str, Any]) -> dict[str, Any]:
+    def _bell_payload(
+        self, device: dict[str, Any], include_cpt: bool = True
+    ) -> dict[str, Any]:
         payload = {
             "traceId": trace_id(),
             "deviceId": device["id"],
             "deviceType": device.get("device_type") or 9,
             "perDeviceType": str(device.get("per_device_type") or "0"),
-            "cptList": "",
         }
+        if include_cpt:
+            payload["cptList"] = ""
         if device.get("is_shared"):
             payload["senderUserId"] = device["sender_user_id"]
             payload["relationType"] = 2
@@ -794,6 +856,27 @@ class HuaweiFindClient:
                 raise HuaweiFindAuthError(info)
             raise HuaweiFindDeviceError(f"Device cannot ring right now: {info}")
         raise HuaweiFindError(f"Ring failed: {info}")
+
+    async def async_stop_ring(self, device: dict[str, Any]) -> bool:
+        """Stop the alarm sound started by :meth:`async_ring`."""
+        data = await self._request(
+            "POST",
+            EP_STOP_BELL,
+            payload=self._bell_payload(device),
+            extra_headers={
+                "x-hw-framework-type": "0",
+                "x-hw-model": HW_MODEL,
+            },
+        )
+        code = data["_code"]
+        if code == 0:
+            return True
+        info = str(data.get("info") or f"code={code}")
+        if code == 990:
+            if not await self._session_is_valid():
+                raise HuaweiFindAuthError(info)
+            raise HuaweiFindDeviceError(f"Device cannot stop ringing right now: {info}")
+        raise HuaweiFindError(f"Stop ring failed: {info}")
 
     async def async_query(self, device: dict[str, Any], sequence: int = 0) -> dict[str, Any]:
         return await self._post(EP_QUERY, self._query_payload(device, sequence))

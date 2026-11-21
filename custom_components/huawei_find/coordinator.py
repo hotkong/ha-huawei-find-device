@@ -36,6 +36,7 @@ from .const import (
 from .auto_login import RECOVERED, SKIPPED, async_try_auto_login
 from .geocode import async_reverse_geocode
 from .helpers import (
+    supports_stop_ring,
     HuaweiFindRuntime,
     _notify_reauth,
     device_identifiers,
@@ -111,6 +112,20 @@ def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str,
         merged["batteries"], inherited_battery = _merge_batteries(previous, result)
         merged["battery"] = aggregate_battery(merged["batteries"])
         merged["battery_stale"] = bool(result.get("battery_stale")) or inherited_battery
+        if not merged.get("network_name"):
+            inherited_network = False
+            for key in (
+                "network_name",
+                "network_type",
+                "network_signal",
+                "network_signal_max",
+            ):
+                if key not in merged and previous.get(key) is not None:
+                    merged[key] = previous[key]
+                    inherited_network = True
+            merged["network_stale"] = inherited_network
+        else:
+            merged["network_stale"] = False
         merged["stale"] = False
         # Reverse geocoding can fail transiently; keep the previous address
         # as long as the device has not moved significantly.
@@ -143,6 +158,11 @@ def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str,
             "batteries",
             "battery_stale",
             "battery_charging",
+            "network_name",
+            "network_type",
+            "network_signal",
+            "network_signal_max",
+            "network_stale",
             "result_stale",
             "result_time",
             "screen_locked",
@@ -163,6 +183,8 @@ def _merge_result(previous: dict[str, Any], result: dict[str, Any]) -> dict[str,
             }
             merged["battery"] = aggregate_battery(merged["batteries"])
             merged["battery_stale"] = True
+        if merged.get("network_name") is not None:
+            merged["network_stale"] = True
         merged["stale"] = True
         if kept_address:
             # The address is inherited, not freshly resolved
@@ -284,11 +306,34 @@ async def async_ring_device(
         wait = int(RING_COOLDOWN - elapsed) + 1
         return {"ok": False, "error": f"Please wait {wait}s before ringing again"}
 
+    auth_retried = False
     for attempt in range(RING_RETRIES + 1):
         try:
             await runtime.client.async_ring(device)
             break
         except HuaweiFindAuthError as err:
+            if not auth_retried:
+                auth_retried = True
+                outcome = await async_try_auto_login(hass, runtime, str(err))
+                if outcome == RECOVERED:
+                    try:
+                        await runtime.client.async_ring(device)
+                        break
+                    except HuaweiFindAuthError as retry_err:
+                        err = retry_err
+                    except HuaweiFindDeviceError as retry_err:
+                        runtime.ring_errors[device_id] = f"device: {retry_err}"
+                        _LOGGER.warning("Ring failed for %s: %s", device.get("name"), retry_err)
+                        return {"ok": False, "error": str(retry_err)}
+                    except HuaweiFindError as retry_err:
+                        runtime.ring_errors[device_id] = f"api: {retry_err}"
+                        _LOGGER.warning("Ring failed for %s: %s", device.get("name"), retry_err)
+                        return {"ok": False, "error": str(retry_err)}
+                elif outcome == SKIPPED:
+                    return {
+                        "ok": False,
+                        "error": "another browser login is in progress; try again shortly",
+                    }
             _notify_reauth(hass, runtime, str(err))
             runtime.ring_errors[device_id] = f"auth: {err}"
             _LOGGER.warning("Ring failed for %s: session expired: %s", device.get("name"), err)
@@ -316,6 +361,57 @@ async def async_ring_device(
     runtime.ring_results[device_id] = dt_util.utcnow()
     async_dispatcher_send(hass, signal_update(runtime.entry.entry_id, device_id))
     _LOGGER.info("Ring requested for %s", device.get("name"))
+    return {"ok": True}
+
+
+async def async_stop_ring_device(
+    hass: HomeAssistant, runtime: HuaweiFindRuntime, device_id: str
+) -> dict[str, Any]:
+    """Stop the alarm sound on one device (Tag/phone/wearable)."""
+    device = runtime.devices.get(device_id)
+    if device is None:
+        return {"ok": False, "error": "Device not found"}
+    if not supports_stop_ring(device):
+        return {
+            "ok": False,
+            "error": "Phones have no remote stop; watches/bands, Tags and bell-capable earbuds do",
+        }
+    try:
+        await runtime.client.async_stop_ring(device)
+    except HuaweiFindAuthError as err:
+        outcome = await async_try_auto_login(hass, runtime, str(err))
+        if outcome == RECOVERED:
+            try:
+                await runtime.client.async_stop_ring(device)
+            except HuaweiFindAuthError as retry_err:
+                err = retry_err
+            except HuaweiFindDeviceError as retry_err:
+                runtime.ring_errors[device_id] = f"device: {retry_err}"
+                _LOGGER.warning("Stop ring failed for %s: %s", device.get("name"), retry_err)
+                return {"ok": False, "error": str(retry_err)}
+            except HuaweiFindError as retry_err:
+                runtime.ring_errors[device_id] = f"api: {retry_err}"
+                _LOGGER.warning("Stop ring failed for %s: %s", device.get("name"), retry_err)
+                return {"ok": False, "error": str(retry_err)}
+            else:
+                err = None
+        if err is not None:
+            if outcome != SKIPPED:
+                _notify_reauth(hass, runtime, str(err))
+            runtime.ring_errors[device_id] = f"auth: {err}"
+            _LOGGER.warning("Stop ring failed for %s: session expired: %s", device.get("name"), err)
+            return {"ok": False, "error": str(err)}
+    except HuaweiFindDeviceError as err:
+        runtime.ring_errors[device_id] = f"device: {err}"
+        _LOGGER.warning("Stop ring failed for %s: %s", device.get("name"), err)
+        return {"ok": False, "error": str(err)}
+    except HuaweiFindError as err:
+        runtime.ring_errors[device_id] = f"api: {err}"
+        _LOGGER.warning("Stop ring failed for %s: %s", device.get("name"), err)
+        return {"ok": False, "error": str(err)}
+
+    async_dispatcher_send(hass, signal_update(runtime.entry.entry_id, device_id))
+    _LOGGER.info("Stop ring requested for %s", device.get("name"))
     return {"ok": True}
 
 

@@ -10,6 +10,9 @@ from custom_components.huawei_find.sensor import (
     HuaweiBatterySensor,
     HuaweiComponentBatterySensor,
     HuaweiLocationSensor,
+    HuaweiNetworkSensor,
+    HuaweiNetworkSignalSensor,
+    HuaweiNetworkTypeSensor,
     HuaweiPositionStatusSensor,
 )
 
@@ -55,6 +58,10 @@ RESULT = {
 }
 
 
+PHONE = {**DEVICE, "per_device_type": "0"}
+NETWORK_RESULT = dict(RESULT, network_name="tytcp_5G", network_type="wifi", network_signal=4, network_signal_max=4, network_stale=False)
+
+
 class EntityConstructionTests(unittest.TestCase):
     def test_location_sensor(self):
         entity = HuaweiLocationSensor(FakeRuntime({DEVICE["id"]: RESULT}), DEVICE)
@@ -83,6 +90,25 @@ class EntityConstructionTests(unittest.TestCase):
             FakeRuntime({DEVICE["id"]: RESULT}, "huawei"), DEVICE
         )
         self.assertEqual(entity.native_value, "Somewhere")
+
+    def test_network_sensors(self):
+        runtime = FakeRuntime({PHONE["id"]: NETWORK_RESULT})
+        name = HuaweiNetworkSensor(runtime, PHONE)
+        kind = HuaweiNetworkTypeSensor(runtime, PHONE)
+        signal = HuaweiNetworkSignalSensor(runtime, PHONE)
+        self.assertEqual(name.native_value, "tytcp_5G")
+        self.assertEqual(kind.native_value, "wifi")
+        self.assertEqual(signal.native_value, 4)
+        self.assertEqual(name.extra_state_attributes["network_signal_max"], 4)
+        self.assertTrue(name.unique_id.endswith("_network"))
+        self.assertTrue(kind.unique_id.endswith("_network_type"))
+        self.assertTrue(signal.unique_id.endswith("_network_signal"))
+
+    def test_network_sensors_empty(self):
+        runtime = FakeRuntime({})
+        for cls in (HuaweiNetworkSensor, HuaweiNetworkTypeSensor, HuaweiNetworkSignalSensor):
+            entity = cls(runtime, PHONE)
+            self.assertIsNone(entity.native_value)
 
     def test_battery_sensor(self):
         entity = HuaweiBatterySensor(FakeRuntime({DEVICE["id"]: RESULT}), DEVICE)

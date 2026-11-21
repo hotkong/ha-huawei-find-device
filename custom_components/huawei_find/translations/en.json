@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Huawei Cloud",
-        "description": "Choose how to authenticate.",
+        "description": "Choose how to authenticate: paste a Cookie from the [cloud.huawei.com](https://cloud.huawei.com/) Find Device request header, or get one through browserless.",
         "menu_options": {
           "paste": "Paste a Cookie",
           "browser": "Get a Cookie with a browser"
@@ -19,10 +19,28 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate Huawei Cloud",
-        "description": "The session expired. Choose how to authenticate again.",
+        "description": "Paste a Cookie, or tick browser login; both methods stay on this page.",
         "menu_options": {
           "reauth_paste": "Paste a new Cookie",
           "reauth_browser": "Get a Cookie with a browser"
+        },
+        "data": {
+          "browser_login": "Use browser login",
+          "cookie": "Cookie",
+          "browser_url": "browserless URL",
+          "browser_token": "browserless token",
+          "username": "Huawei account",
+          "password": "Password",
+          "store_credentials": "Store browser credentials"
+        },
+        "data_description": {
+          "browser_login": "Leave unchecked to paste a Cookie; tick to use the browserless endpoint and account below.",
+          "cookie": "Copy the full Cookie request header from the cloud.huawei.com Find Device page.",
+          "browser_url": "browserless v2 endpoint, e.g. http://192.168.1.100:3000.",
+          "browser_token": "Only needed when your browserless instance requires a token.",
+          "username": "Huawei account used for the headless login.",
+          "password": "Stored in plain text in this entry's .storage.",
+          "store_credentials": "Uncheck to avoid writing the credentials into the entry."
         }
       },
       "init": {
@@ -45,7 +63,7 @@
       },
       "paste": {
         "title": "Paste a Cookie",
-        "description": "On the Huawei Cloud Find Device page, open DevTools → Network and copy the Cookie request header.",
+        "description": "On the Huawei Cloud Find Device page ([cloud.huawei.com](https://cloud.huawei.com/)), open DevTools → Network and copy the Cookie request header.",
         "data": {
           "cookie": "Cookie"
         }
@@ -68,7 +86,8 @@
         "title": "Paste a new Cookie",
         "data": {
           "cookie": "Cookie"
-        }
+        },
+        "description": "On the Huawei Cloud Find Device page ([cloud.huawei.com](https://cloud.huawei.com/)), open DevTools → Network and copy the new Cookie request header."
       },
       "reauth_browser": {
         "title": "Get a Cookie with a browser",
@@ -79,6 +98,9 @@
           "username": "Huawei account",
           "password": "Huawei password",
           "store_credentials": "Store these credentials for automatic re-login"
+        },
+        "data_description": {
+          "store_credentials": "The credentials are stored in plain text in this entry’s .storage."
         }
       }
     },
@@ -127,7 +149,8 @@
           "browser_url": "Used only when the cookie expires. browserless v2 endpoint (e.g. http://192.168.1.100:3000) plus the Huawei credentials below; verification codes still need manual action.",
           "browser_token": "Only needed when your browserless instance requires a token.",
           "username": "Used only for the headless-login fallback; leave empty to keep manual cookie paste.",
-          "password": "Stored in plain text in HA .storage; evaluate the risk before enabling."
+          "password": "Stored in plain text in HA .storage; evaluate the risk before enabling.",
+          "scan_interval": "10–20 minutes recommended; 0 disables automatic refresh."
         }
       }
     },
@@ -143,6 +166,9 @@
       },
       "ring": {
         "name": "Ring device"
+      },
+      "stop_ring": {
+        "name": "Stop ringing"
       }
     },
     "sensor": {
@@ -171,6 +197,19 @@
           "stale": "Failed",
           "unknown": "Unknown"
         }
+      },
+      "network": {
+        "name": "Network"
+      },
+      "network_type": {
+        "name": "Network type",
+        "state": {
+          "wifi": "Wi-Fi",
+          "mobile": "Mobile"
+        }
+      },
+      "network_signal": {
+        "name": "Network signal"
       }
     },
     "binary_sensor": {
@@ -201,6 +240,10 @@
         "cookie": {
           "name": "Cookie",
           "description": "Full cookie request header value"
+        },
+        "entry_id": {
+          "name": "Account entry",
+          "description": "Leave empty with a single account; pick one from the dropdown when there are multiple."
         }
       }
     },
