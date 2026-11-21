@@ -314,6 +314,17 @@ makes it more likely to lose the session (and require pasting a new cookie).
 - Session lifetime is not fixed and there is no automatic renewal: when it expires you must
   paste a new cookie.
 
+## 赞赏 / Support
+
+<p align="center">
+  <a href="assets/about/wechat-reward.png"><img src="assets/about/wechat-reward.png" alt="微信赞赏码 / WeChat reward QR code" width="260"></a>
+  <br>
+  <strong>微信赞赏码 · WeChat</strong>
+  <br>
+  <sub>项目保持开源，赞赏完全自愿，不影响安装、使用或问题反馈。<br>
+  The project stays open source; tips are voluntary and never affect installation, usage, or support.</sub>
+</p>
+
 ## License
 
 [MIT](LICENSE)
