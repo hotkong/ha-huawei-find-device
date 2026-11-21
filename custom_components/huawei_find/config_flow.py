@@ -1,4 +1,4 @@
-"""Config flow: paste a Huawei Cloud cookie, then select devices."""
+"""Config flow: sign in with an account, a pasted cookie or a browser, then devices."""
 
 from __future__ import annotations
 
@@ -30,13 +30,23 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.util import dt as dt_util
 
-from .api import HuaweiFindAuthError, HuaweiFindClient, HuaweiFindError
+from . import auth
+from .api import (
+    HuaweiFindAuthError,
+    HuaweiFindClient,
+    HuaweiFindError,
+    cookie_matches_entry,
+)
 from .browser_login import BrowserLoginError, async_browser_login
 from .const import (
+    CONF_ACCOUNT,
     CONF_AMAP_KEY,
     CONF_AUTH_TIME,
     CONF_BROWSER_TOKEN,
     CONF_BROWSER_URL,
+    CONF_DEVICE_ID,
+    CONF_DEVICE_ID_BRIDGE,
+    CONF_LOGIN_ID,
     CONF_HW_PASSWORD,
     CONF_HW_USERNAME,
     CONF_COOKIE,
@@ -92,6 +102,19 @@ BROWSER_SCHEMA = vol.Schema(
     }
 )
 PREVIEW_SCHEMA = vol.Schema({vol.Required(CONF_COOKIE): COOKIE_SELECTOR})
+ACCOUNT_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_ACCOUNT): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
+        ),
+        vol.Required(CONF_HW_PASSWORD): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.PASSWORD)
+        ),
+        vol.Optional(CONF_LOGIN_ID, default=""): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
+        ),
+    }
+)
 
 
 class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -109,6 +132,14 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         self._login_error: str | None = None
         self._preview_step = "cookie_preview"
         self._reauth_use_browser = False
+        self._device_id: str | None = None
+        self._bridge_device_id: str | None = None
+        self._accounts: list[str] = []
+        self._pending_account = ""
+        self._pending_password = ""
+        self._pending_device_id: str | None = None
+        self._pending_bridge_device_id: str | None = None
+        self._reauth_pending = False
 
     @staticmethod
     @callback
@@ -138,6 +169,117 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         self._cookie = cookie
         self._devices = devices
         return devices, None
+
+    async def _async_set_unique_id(self) -> None:
+        if self._user_id:
+            await self.async_set_unique_id(f"huawei_{self._user_id}")
+            self._abort_if_unique_id_configured()
+
+    async def _async_account_step(
+        self, step_id: str, user_input: dict[str, Any] | None
+    ) -> ConfigFlowResult:
+        """Sign in with a Huawei account and password (no browser involved)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            account = (user_input.get(CONF_ACCOUNT) or "").strip()
+            password = user_input.get(CONF_HW_PASSWORD) or ""
+            login_id = (user_input.get(CONF_LOGIN_ID) or "").strip() or None
+            self._reauth_pending = step_id.startswith("reauth")
+            try:
+                result = await auth.async_login(
+                    account,
+                    password,
+                    login_id=login_id,
+                    device_id=self._device_id,
+                    bridge_device_id=self._bridge_device_id,
+                )
+            except auth.HuaweiLoginThrottled:
+                # Local cooldown, or Huawei's own risk control. Either way the
+                # account needs a pause, not another attempt.
+                errors["base"] = "rate_limited"
+            except auth.HuaweiLoginAccountChoice as err:
+                self._accounts = list(err.accounts)
+                self._pending_account = account
+                self._pending_password = password
+                return await self.async_step_account_choice()
+            except auth.HuaweiLoginCodeRequired:
+                errors["base"] = "verification_required"
+            except auth.HuaweiLoginAuthError:
+                errors["base"] = "invalid_auth"
+            except auth.HuaweiLoginError as err:
+                _LOGGER.warning("Huawei account sign-in failed: %s", err)
+                errors["base"] = "cannot_connect"
+            else:
+                self._pending_device_id = result.device_id
+                self._pending_bridge_device_id = result.bridge_device_id
+                _, error = await self._validate_cookie(result.cookie)
+                if error:
+                    errors["base"] = error
+                elif self._reauth_pending:
+                    return self._finish_reauth()
+                else:
+                    await self._async_set_unique_id()
+                    return await self.async_step_devices()
+
+        return self.async_show_form(
+            step_id=step_id, data_schema=ACCOUNT_SCHEMA, errors=errors
+        )
+
+    async def async_step_account(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._async_account_step("account", user_input)
+
+    async def async_step_account_choice(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick which of the Huawei IDs bound to the number to sign in as."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                result = await auth.async_login(
+                    self._pending_account,
+                    self._pending_password,
+                    login_id=user_input.get(CONF_LOGIN_ID),
+                    device_id=self._device_id,
+                    bridge_device_id=self._bridge_device_id,
+                )
+            except auth.HuaweiLoginThrottled:
+                errors["base"] = "rate_limited"
+            except auth.HuaweiLoginCodeRequired:
+                errors["base"] = "verification_required"
+            except auth.HuaweiLoginAuthError:
+                errors["base"] = "invalid_auth"
+            except auth.HuaweiLoginError as err:
+                _LOGGER.warning("Huawei account sign-in failed: %s", err)
+                errors["base"] = "cannot_connect"
+            else:
+                self._pending_device_id = result.device_id
+                _, error = await self._validate_cookie(result.cookie)
+                if error:
+                    errors["base"] = error
+                elif self._reauth_pending:
+                    return self._finish_reauth()
+                else:
+                    await self._async_set_unique_id()
+                    return await self.async_step_devices()
+
+        return self.async_show_form(
+            step_id="account_choice",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_LOGIN_ID): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(value=name, label=name)
+                                for name in self._accounts
+                            ]
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
 
     def _browser_options(self) -> dict[str, Any]:
         if not self._browser_input.get("store_credentials", True):
@@ -255,7 +397,7 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         return self.async_show_menu(
-            step_id="user", menu_options=["paste", "browser"]
+            step_id="user", menu_options=["paste", "browser", "account"]
         )
 
     async def async_step_paste(
@@ -313,17 +455,22 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
             selected = user_input.get(CONF_DEVICES) or [
                 device["id"] for device in self._devices
             ]
+            data: dict[str, Any] = {
+                CONF_COOKIE: self._cookie,
+                CONF_DEVICES: selected,
+                CONF_AUTH_TIME: dt_util.utcnow().isoformat(),
+            }
+            if self._pending_device_id:
+                data[CONF_DEVICE_ID] = self._pending_device_id
+            if self._pending_bridge_device_id:
+                data[CONF_DEVICE_ID_BRIDGE] = self._pending_bridge_device_id
             return self.async_create_entry(
                 title=(
                     f"{ENTRY_TITLE} ({self._user_id[-4:]})"
                     if self._user_id
                     else ENTRY_TITLE
                 ),
-                data={
-                    CONF_COOKIE: self._cookie,
-                    CONF_DEVICES: selected,
-                    CONF_AUTH_TIME: dt_util.utcnow().isoformat(),
-                },
+                data=data,
                 options={
                     CONF_SCAN_INTERVAL: _scan_interval_value(
                         user_input.get(CONF_SCAN_INTERVAL)
@@ -369,22 +516,34 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     # -- re-authorization ---------------------------------------------------
     async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         self._preview_step = "reauth_preview"
+        self._device_id = str(entry_data.get(CONF_DEVICE_ID) or "") or None
+        self._bridge_device_id = str(entry_data.get(CONF_DEVICE_ID_BRIDGE) or "") or None
         return self.async_show_menu(
             step_id="reauth_confirm",
-            menu_options=["reauth_paste", "reauth_browser"],
+            menu_options=["reauth_paste", "reauth_browser", "reauth_account"],
         )
 
     def _finish_reauth(self) -> ConfigFlowResult:
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if entry is None:
             return self.async_abort(reason="reauth_failed")
+        # With an account chooser in the flow a different Huawei ID can be
+        # selected; writing that cookie into this entry would silently switch
+        # accounts, so the cookie has to belong to it first.
+        if not cookie_matches_entry(self._cookie, entry.unique_id):
+            return self.async_abort(reason="wrong_account")
+        data = {
+            **entry.data,
+            CONF_COOKIE: self._cookie,
+            CONF_AUTH_TIME: dt_util.utcnow().isoformat(),
+        }
+        if self._pending_device_id:
+            data[CONF_DEVICE_ID] = self._pending_device_id
+        if self._pending_bridge_device_id:
+            data[CONF_DEVICE_ID_BRIDGE] = self._pending_bridge_device_id
         self.hass.config_entries.async_update_entry(
             entry,
-            data={
-                **entry.data,
-                CONF_COOKIE: self._cookie,
-                CONF_AUTH_TIME: dt_util.utcnow().isoformat(),
-            },
+            data=data,
             options={**entry.options, **self._browser_options()},
         )
         self.hass.async_create_task(
@@ -499,6 +658,10 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders=placeholders,
         )
+    async def async_step_reauth_account(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._async_account_step("reauth_account", user_input)
 
     async def async_step_reauth_paste(
         self, user_input: dict[str, Any] | None = None

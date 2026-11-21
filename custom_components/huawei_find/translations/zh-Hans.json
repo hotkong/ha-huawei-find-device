@@ -6,7 +6,8 @@
         "description": "选择认证方式：从 [cloud.huawei.com](https://cloud.huawei.com/) 的「查找设备」请求头粘贴 Cookie，或用 browserless 登录获取。",
         "menu_options": {
           "paste": "粘贴 Cookie",
-          "browser": "用浏览器获取 Cookie"
+          "browser": "用浏览器获取 Cookie",
+          "account": "华为账号密码"
         }
       },
       "devices": {
@@ -22,7 +23,8 @@
         "description": "粘贴 Cookie，或勾选使用浏览器登录；两种方式在同一页切换，不会跳走。",
         "menu_options": {
           "reauth_paste": "粘贴新 Cookie",
-          "reauth_browser": "用浏览器获取 Cookie"
+          "reauth_browser": "用浏览器获取 Cookie",
+          "reauth_account": "华为账号密码"
         },
         "data": {
           "browser_login": "使用浏览器登录",
@@ -102,6 +104,32 @@
         "data_description": {
           "store_credentials": "勾选后凭据会明文保存在该条目的 .storage 中。"
         }
+      },
+      "account": {
+        "title": "华为账号",
+        "description": "用华为账号和密码登录。密码只在本次登录中使用一次，不会被保存。本安装会在首次登录时向华为注册一台自己的设备，并在之后重新认证时沿用该设备身份。登录可能会让同账号在其他设备上的会话失效；短时间内反复尝试时，华为也可能要求验证码或暂时拒绝登录。",
+        "data": {
+          "account": "华为账号（手机号或邮箱）",
+          "password": "密码",
+          "login_id": "要登录的华为 ID（仅手机号绑定多个账号时填）"
+        }
+      },
+      "account_choice": {
+        "title": "选择华为 ID",
+        "description": "该手机号绑定了多个华为 ID，请选择拥有要跟踪设备的那个。",
+        "data": {
+          "login_id": "华为 ID"
+        }
+      },
+      "reauth_account": {
+        "title": "用华为账号重新登录",
+        "description": "华为云会话已过期。用账号密码登录即可续上，不必再粘 Cookie。",
+        "data": {
+          "account": "华为账号（手机号或邮箱）",
+          "password": "密码",
+          "login_id": "要登录的华为 ID（仅手机号绑定多个账号时填）",
+          "device_fp": "设备指纹（可选）"
+        }
       }
     },
     "error": {
@@ -110,14 +138,17 @@
       "no_devices": "该账号下没有可用设备。",
       "devices_unavailable": "暂时无法获取设备列表（会话可能已过期），本次只能修改地址与刷新设置。",
       "browser_login_invalid": "浏览器地址、华为账号和密码都必须填写。",
-      "browser_login_failed": "浏览器登录失败：{error}"
+      "browser_login_failed": "浏览器登录失败：{error}",
+      "verification_required": "华为要求该账号做二次验证。请改选「粘贴 Cookie」：在 cloud.huawei.com 登录后打开「查找设备」，再复制 Cookie 请求头。",
+      "rate_limited": "登录尝试过于频繁，请等几分钟再试。反复请求可能导致账号被锁定。"
     },
     "abort": {
       "already_configured": "该华为账号已经添加过了。",
       "reauth_successful": "重新授权成功。",
       "reauth_failed": "重新授权失败。",
       "session_expired": "华为云会话已过期，请先重新授权后再试。",
-      "cannot_connect": "暂时无法连接华为云。"
+      "cannot_connect": "暂时无法连接华为云。",
+      "wrong_account": "这个 Cookie 属于另一个华为账号，请用创建该条目时使用的账号登录。"
     },
     "progress": {
       "browser_login": "正在通过无头浏览器登录华为云，最多约 1 分钟…"
