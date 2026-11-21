@@ -13,6 +13,14 @@ battery and status on demand, or make the phone ring.
 > Unofficial integration built on the Huawei Cloud web portal. It may break if Huawei
 > changes it. Use it only for devices you own or are authorized to track.
 
+<p align="center">
+  <a href="assets/about/wechat-reward-2026-11.png"><img src="assets/about/wechat-reward-2026-11.png" alt="微信赞赏码 / WeChat reward QR code" width="180"></a>
+  <br>
+  <sub><strong>微信赞赏码</strong> · 如果这个项目帮到你，欢迎支持维护<br>
+  赞赏完全自愿，不影响安装、使用或问题反馈。<br>
+  WeChat support QR · tips are voluntary and never affect usage or support.</sub>
+</p>
+
 ---
 
 ## 中文说明
@@ -313,17 +321,6 @@ makes it more likely to lose the session (and require pasting a new cookie).
 - Address lookup is best effort and falls back to the previous address;
 - Session lifetime is not fixed and there is no automatic renewal: when it expires you must
   paste a new cookie.
-
-## 赞赏 / Support
-
-<p align="center">
-  <a href="assets/about/wechat-reward-2026-11.png"><img src="assets/about/wechat-reward-2026-11.png" alt="微信赞赏码 / WeChat reward QR code" width="260"></a>
-  <br>
-  <strong>微信赞赏码 · WeChat</strong>
-  <br>
-  <sub>项目保持开源，赞赏完全自愿，不影响安装、使用或问题反馈。<br>
-  The project stays open source; tips are voluntary and never affect installation, usage, or support.</sub>
-</p>
 
 ## License
 
