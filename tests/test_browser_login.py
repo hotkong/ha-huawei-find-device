@@ -45,6 +45,11 @@ class CooldownTests(unittest.TestCase):
     def test_first_attempt_is_allowed(self):
         self.assertEqual(cooldown_remaining(0.0, now=1000.0), 0)
 
+    def test_never_attempted_is_allowed_on_a_fresh_boot(self):
+        # A newly started process has a small monotonic clock; 0.0 is "never
+        # attempted", not "attempted at boot".
+        self.assertEqual(cooldown_remaining(0.0, now=5.0), 0)
+
     def test_recent_attempt_is_blocked(self):
         self.assertEqual(cooldown_remaining(1000.0, now=1300.0), 300)
 

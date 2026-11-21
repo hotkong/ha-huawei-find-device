@@ -127,7 +127,14 @@ def build_login_code(username: str, password: str) -> str:
 
 
 def cooldown_remaining(last_attempt: float, now: float | None = None) -> float:
-    """Seconds until the next automatic attempt is allowed."""
+    """Seconds until the next automatic attempt is allowed.
+
+    ``0.0`` means "never attempted". On a freshly started HA process the
+    monotonic clock is still small, so subtracting it from zero would otherwise
+    look like an active cooldown and skip the first automatic re-login.
+    """
+    if last_attempt <= 0:
+        return 0.0
     now = time.monotonic() if now is None else now
     return max(0.0, AUTO_LOGIN_COOLDOWN - (now - last_attempt))
 
