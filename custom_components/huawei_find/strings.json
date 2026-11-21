@@ -6,7 +6,8 @@
         "description": "Choose how to authenticate: paste a Cookie from the [cloud.huawei.com](https://cloud.huawei.com/) Find Device request header, or get one through browserless.",
         "menu_options": {
           "paste": "Paste a Cookie",
-          "browser": "Get a Cookie with a browser"
+          "browser": "Get a Cookie with a browser",
+          "account": "Huawei account and password"
         }
       },
       "devices": {
@@ -22,7 +23,8 @@
         "description": "Paste a Cookie, or tick browser login; both methods stay on this page.",
         "menu_options": {
           "reauth_paste": "Paste a new Cookie",
-          "reauth_browser": "Get a Cookie with a browser"
+          "reauth_browser": "Get a Cookie with a browser",
+          "reauth_account": "Huawei account and password"
         },
         "data": {
           "browser_login": "Use browser login",
@@ -102,6 +104,32 @@
         "data_description": {
           "store_credentials": "The credentials are stored in plain text in this entry’s .storage."
         }
+      },
+      "account": {
+        "title": "Huawei account",
+        "description": "Sign in with your Huawei ID. The password is used once and is never stored. This installation registers its own device with Huawei on the first sign-in and keeps that identity for later re-authentication. Signing in can end other sessions of the same account, and Huawei may ask for a verification code or refuse the sign-in for a while after repeated attempts.",
+        "data": {
+          "account": "Huawei account (phone number or email)",
+          "password": "Password",
+          "login_id": "Huawei ID to sign in as (only when the number has several)"
+        }
+      },
+      "account_choice": {
+        "title": "Choose the Huawei ID",
+        "description": "This phone number is bound to more than one Huawei ID. Pick the one that owns the devices to track.",
+        "data": {
+          "login_id": "Huawei ID"
+        }
+      },
+      "reauth_account": {
+        "title": "Sign in again with the Huawei account",
+        "description": "The Huawei Cloud session has expired. Signing in with the account and password renews it without pasting a cookie.",
+        "data": {
+          "account": "Huawei account (phone number or email)",
+          "password": "Password",
+          "login_id": "Huawei ID to sign in as (only when the number has several)",
+          "device_fp": "Device fingerprint (optional)"
+        }
       }
     },
     "error": {
@@ -110,14 +138,17 @@
       "no_devices": "No devices found for this account.",
       "devices_unavailable": "Could not load the device list (the session may have expired). Only the address/refresh settings can be changed right now.",
       "browser_login_invalid": "Browser URL, Huawei account and password are required.",
-      "browser_login_failed": "Browser login failed: {error}"
+      "browser_login_failed": "Browser login failed: {error}",
+      "verification_required": "Huawei asks this account for a verification code. Use \"Paste a Cookie\" instead: log in at cloud.huawei.com, open \"Find Device\", then copy the Cookie request header.",
+      "rate_limited": "Too many sign-in attempts. Wait a few minutes before trying again; Huawei can lock the account when it is asked repeatedly."
     },
     "abort": {
       "already_configured": "This Huawei account is already configured.",
       "reauth_successful": "Re-authentication successful.",
       "reauth_failed": "Re-authentication failed.",
       "session_expired": "The Huawei Cloud session has expired. Re-authenticate first, then try again.",
-      "cannot_connect": "Cannot reach Huawei Cloud right now."
+      "cannot_connect": "Cannot reach Huawei Cloud right now.",
+      "wrong_account": "That cookie belongs to a different Huawei ID. Sign in as the account this entry was created with."
     },
     "progress": {
       "browser_login": "Logging in through the headless browser (up to about a minute)…"

@@ -18,6 +18,16 @@ CONF_GEOCODE_PROVIDER = "geocode_provider"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_AMAP_KEY = "amap_key"
 
+# Native account sign-in (config_flow step "account" + auth.py). No browser and
+# no browserless service are involved, and the password is used once during the
+# flow without ever being stored. The device fingerprint is the identity the
+# account gateway issued to this install; it is kept and re-sealed on re-auth
+# because the gateway only accepts a device id it has seen before.
+CONF_ACCOUNT = "account"
+CONF_LOGIN_ID = "login_id"
+CONF_DEVICE_ID = "device_id"
+CONF_DEVICE_ID_BRIDGE = "device_id_bridge"
+
 # Automatic location refresh: new entries start at 15 minutes (0 = disabled).
 DEFAULT_SCAN_INTERVAL = 15
 MAX_SCAN_INTERVAL = 720
