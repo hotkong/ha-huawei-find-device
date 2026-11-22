@@ -13,14 +13,9 @@ battery and status on demand, or make the phone ring.
 > Unofficial integration built on the Huawei Cloud web portal. It may break if Huawei
 > changes it. Use it only for devices you own or are authorized to track.
 
-<!--
-  首屏截图位（图片就绪后启用）：去掉本块注释标记，保留下面的 p align 段即可。
-  需要的文件名、拍摄步骤、打码清单与规格见 assets/screenshots/README.md
-  <p align="center">
-    <img src="assets/screenshots/device-page.png" width="46%" alt="HA 设备页：定位、电量、响铃实体 / HA device page">
-    <img src="assets/screenshots/config-flow.png" width="46%" alt="添加集成：粘贴 Cookie / 浏览器 / 账号密码三选一 / three sign-in paths">
-  </p>
--->
+<p align="center">
+  <img src="assets/screenshots/device-page.png" alt="HA 设备页：刷新/响铃按钮、电量、网络、定位与追踪器实体 / HA device entities" width="34%">
+</p>
 
 <p align="center">
   <a href="assets/about/wechat-reward-2026-11.png"><img src="assets/about/wechat-reward-2026-11.png" alt="微信赞赏码 / WeChat reward QR code" width="180"></a>
@@ -95,6 +90,10 @@ battery and status on demand, or make the phone ring.
 3. 右键任意请求 → **Copy → Copy request headers**，找到 `Cookie:` 那一行；
 4. 回到 HA：设置 → 设备与服务 → 添加集成 → **Huawei Cloud Find Device**，粘贴 Cookie；
 5. 勾选要跟踪的设备，提交。
+
+<p align="center">
+  <img src="assets/screenshots/config-flow.png" alt="添加集成：粘贴 Cookie / 用浏览器获取 Cookie / 华为账号密码 三选一" width="66%">
+</p>
 
 > 必须从请求头复制：浏览器控制台里的 `document.cookie` 拿不到登录态的完整信息。
 
