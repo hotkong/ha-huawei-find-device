@@ -13,17 +13,22 @@ battery and status on demand, or make the phone ring.
 > Unofficial integration built on the Huawei Cloud web portal. It may break if Huawei
 > changes it. Use it only for devices you own or are authorized to track.
 
-<p align="center">
-  <img src="assets/screenshots/device-page.png" alt="HA 设备页：刷新/响铃按钮、电量、网络、定位与追踪器实体 / HA device entities" width="34%">
-</p>
-
-<p align="center">
-  <a href="assets/about/wechat-reward-2026-11.png"><img src="assets/about/wechat-reward-2026-11.png" alt="微信赞赏码 / WeChat reward QR code" width="180"></a>
-  <br>
-  <sub><strong>微信赞赏码</strong> · 如果这个项目帮到你，欢迎支持维护<br>
-  赞赏完全自愿，不影响安装、使用或问题反馈。<br>
-  WeChat support QR · tips are voluntary and never affect usage or support.</sub>
-</p>
+<div align="center">
+<table>
+  <tr>
+    <td align="center" valign="middle">
+      <img src="assets/screenshots/device-page.png" alt="HA 设备页：刷新/响铃按钮、电量、网络、定位与追踪器实体 / HA device entities" width="320">
+    </td>
+    <td align="center" valign="middle">
+      <a href="assets/about/wechat-reward-2026-11.png"><img src="assets/about/wechat-reward-2026-11.png" alt="微信赞赏码 / WeChat reward QR code" width="170"></a>
+      <br>
+      <sub><strong>微信赞赏码</strong> · 如果这个项目帮到你，欢迎支持维护<br>
+      赞赏完全自愿，不影响安装、使用或问题反馈。<br>
+      WeChat support QR · tips are voluntary and never affect usage or support.</sub>
+    </td>
+  </tr>
+</table>
+</div>
 
 ---
 
