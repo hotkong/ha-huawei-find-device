@@ -131,7 +131,6 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         self._login_cookie: str | None = None
         self._login_error: str | None = None
         self._preview_step = "cookie_preview"
-        self._reauth_use_browser = False
         self._device_id: str | None = None
         self._bridge_device_id: str | None = None
         self._accounts: list[str] = []
@@ -380,7 +379,6 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         placeholders: dict[str, str] = {"error": ""}
 
         if user_input is not None:
-            self._reauth_use_browser = bool(user_input.get("browser_login"))
             self._browser_input = {
                 CONF_BROWSER_URL: (user_input.get(CONF_BROWSER_URL) or "").strip(),
                 CONF_BROWSER_TOKEN: (
@@ -600,113 +598,6 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         return self.async_abort(reason="reauth_successful")
 
-    def _reauth_schema(self) -> vol.Schema:
-        d = self._browser_input
-        return vol.Schema(
-            {
-                vol.Optional(
-                    "browser_login", default=self._reauth_use_browser
-                ): BooleanSelector(
-                    BooleanSelectorConfig()
-                ),
-                vol.Optional(CONF_COOKIE, default=""): COOKIE_SELECTOR,
-                vol.Optional(
-                    CONF_BROWSER_URL, default=d.get(CONF_BROWSER_URL, "")
-                ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
-                vol.Optional(
-                    CONF_BROWSER_TOKEN, default=d.get(CONF_BROWSER_TOKEN, "")
-                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
-                vol.Optional(
-                    CONF_HW_USERNAME, default=d.get(CONF_HW_USERNAME, "")
-                ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
-                vol.Optional(
-                    CONF_HW_PASSWORD, default=d.get(CONF_HW_PASSWORD, "")
-                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
-                vol.Optional(
-                    "store_credentials", default=d.get("store_credentials", True)
-                ): BooleanSelector(BooleanSelectorConfig()),
-            }
-        )
-
-    async def async_step_reauth_confirm(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """One page: paste a Cookie, or tick the browser-login option."""
-        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-        if not self._browser_input and entry is not None:
-            self._browser_input = {
-                CONF_BROWSER_URL: entry.options.get(CONF_BROWSER_URL, ""),
-                CONF_BROWSER_TOKEN: entry.options.get(CONF_BROWSER_TOKEN, ""),
-                CONF_HW_USERNAME: entry.options.get(CONF_HW_USERNAME, ""),
-                CONF_HW_PASSWORD: entry.options.get(CONF_HW_PASSWORD, ""),
-                "store_credentials": True,
-            }
-        self._preview_step = "reauth_preview"
-        errors: dict[str, str] = {}
-        placeholders: dict[str, str] = {"error": ""}
-
-        if user_input is not None:
-            self._browser_input = {
-                CONF_BROWSER_URL: (user_input.get(CONF_BROWSER_URL) or "").strip(),
-                CONF_BROWSER_TOKEN: (
-                    user_input.get(CONF_BROWSER_TOKEN) or ""
-                ).strip(),
-                CONF_HW_USERNAME: (user_input.get(CONF_HW_USERNAME) or "").strip(),
-                CONF_HW_PASSWORD: user_input.get(CONF_HW_PASSWORD) or "",
-                "store_credentials": bool(
-                    user_input.get("store_credentials", True)
-                ),
-            }
-            if not user_input.get("browser_login"):
-                cookie = (user_input.get(CONF_COOKIE) or "").strip()
-                _, error = await self._validate_cookie(cookie)
-                if error:
-                    errors["base"] = error
-                else:
-                    return self._finish_reauth()
-            elif not (
-                self._browser_input[CONF_BROWSER_URL]
-                and self._browser_input[CONF_HW_USERNAME]
-                and self._browser_input[CONF_HW_PASSWORD]
-            ):
-                errors["base"] = "browser_login_invalid"
-            else:
-                self._login_task = self.hass.async_create_task(
-                    self._async_browser_login()
-                )
-                return self.async_show_progress(
-                    step_id="reauth_confirm",
-                    progress_action="browser_login",
-                    progress_task=self._login_task,
-                )
-
-        if self._login_task is not None:
-            if not self._login_task.done():
-                return self.async_show_progress(
-                    step_id="reauth_confirm",
-                    progress_action="browser_login",
-                    progress_task=self._login_task,
-                )
-            self._login_task = None
-            if self._login_error:
-                errors["base"] = "browser_login_failed"
-                placeholders["error"] = self._login_error[:250]
-                self._login_error = None
-            elif self._login_cookie:
-                self._cookie = self._login_cookie
-                return self.async_show_progress_done(
-                    next_step_id="reauth_preview"
-                )
-            else:
-                errors["base"] = "browser_login_failed"
-                placeholders["error"] = "no cookie returned"
-
-        return self.async_show_form(
-            step_id="reauth_confirm",
-            data_schema=self._reauth_schema(),
-            errors=errors,
-            description_placeholders=placeholders,
-        )
     async def async_step_reauth_account(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
