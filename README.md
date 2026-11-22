@@ -13,6 +13,15 @@ battery and status on demand, or make the phone ring.
 > Unofficial integration built on the Huawei Cloud web portal. It may break if Huawei
 > changes it. Use it only for devices you own or are authorized to track.
 
+<!--
+  首屏截图位（图片就绪后启用）：去掉本块注释标记，保留下面的 p align 段即可。
+  需要的文件名、拍摄步骤、打码清单与规格见 assets/screenshots/README.md
+  <p align="center">
+    <img src="assets/screenshots/device-page.png" width="46%" alt="HA 设备页：定位、电量、响铃实体 / HA device page">
+    <img src="assets/screenshots/config-flow.png" width="46%" alt="添加集成：粘贴 Cookie / 浏览器 / 账号密码三选一 / three sign-in paths">
+  </p>
+-->
+
 <p align="center">
   <a href="assets/about/wechat-reward-2026-11.png"><img src="assets/about/wechat-reward-2026-11.png" alt="微信赞赏码 / WeChat reward QR code" width="180"></a>
   <br>
@@ -260,13 +269,16 @@ resulting position.
 - Address sensor (coordinates only when no address source is configured);
 - GPS `device_tracker` per device, ready to attach to a `person`;
 - Separate battery, charging and last-locate-status entities; earbuds report left bud, right bud and charging case batteries separately, plus a lowest-battery aggregate;
+- Own phones also expose the network name (Wi-Fi SSID or mobile network), the network type and signal bars (Wi-Fi 0–4, mobile 0–5); the phone number is never stored;
+- The device page shows the model, firmware version and serial number reported by Huawei (the API has no MAC, so none is invented);
 - Failed lookups keep the last known position (marked stale), and results survive restarts;
 - Devices disabled in the UI are skipped automatically;
 - Tracked devices can be added or removed later from the Options page, with entities and device entries cleaned up.
 
 **Finding a phone**
 
-- A "ring device" button per own device — phone, watch or band (max-volume alarm, 30 s cooldown, one automatic retry);
+- A "ring device" button per own phone, watch, band, HUAWEI Tag or `bell`-capable earbuds (max-volume alarm, 30 s cooldown, one automatic retry);
+- Watches, bands, Tags and `bell` earbuds also get a "stop ringing" button; the web portal offers no remote stop for phones, so none is created;
 - Own devices only — family-shared devices are not supported.
 
 **Automation and maintenance**
@@ -276,7 +288,8 @@ resulting position.
   known coordinates immediately without waking the phone;
 - Option changes apply instantly, no restart or reload;
 - Session status visible on the "refresh all device info" button, with a re-auth notification when it expires;
-- Optional: an expired cookie can be renewed by a headless login through browserless (verification codes still need manual action);
+- Native "Download diagnostics" on the integration page: a redacted export of the session, devices and recent lookup results;
+- Optional: an expired cookie can be renewed by a headless login through browserless, or by signing in with the Huawei account (verification codes still need manual action);
 - Repeated lookups of the same position are not re-resolved.
 
 **Multiple accounts**
@@ -295,6 +308,16 @@ Requirements: Home Assistant **2026.11+** (tested on 2026.11.2), no extra depend
 Copy the `Cookie` request header (DevTools → Network → any find-device request) and paste
 it into the integration setup, then pick the devices to track. Repeat for a second account.
 
+Don't want to copy it by hand? Setup offers three sign-in paths: paste a `Cookie`, let the
+integration fetch one through a browserless instance, or sign in with the Huawei account and
+password (pure Python, no browserless needed — the password is used only for that login and
+is **not written to the entry**). Re-authentication offers the same three paths. Account
+login may invalidate other sessions of that account and can trigger a verification code, and
+repeated attempts are rate-limited locally after three failures; paste a cookie if you need
+maximum stability. The device identity used for account login is registered once per
+installation and reused afterwards — if Huawei stops accepting it, the next manual login
+re-registers automatically.
+
 > **Tip for a longer-lived cookie (tested)**: sign in from a **private/incognito window**,
 > copy the `Cookie` header, then **close the incognito window right away**. Don't sign into
 > the same Huawei account in a normal window afterwards — the two sessions rotate each
@@ -303,9 +326,11 @@ it into the integration setup, then pick the devices to track. Repeat for a seco
 
 ### Entities
 
-`button.*_refresh_all_device_info`, `button.*_refresh_device_info` (older installs keep `_refresh_all_locations` / `_refresh_location`), `button.*_ring`, `sensor.*_last_location`,
-`sensor.*_battery`, `binary_sensor.*_charging` (phones only), `sensor.*_last_locate_status`,
-`device_tracker.*`, plus the `huawei_find.refresh`, `huawei_find.set_cookie` and `huawei_find.refresh_cookie` services.
+`button.*_refresh_all_device_info`, `button.*_refresh_device_info` (older installs keep `_refresh_all_locations` / `_refresh_location`), `button.*_ring`, `button.*_stop_ring`
+(watches/bands/Tags and `bell` earbuds only), `sensor.*_last_location`, `sensor.*_battery`,
+earbud battery sensors per component, `sensor.*_network*` (own phones only),
+`binary_sensor.*_charging` (phones only), `sensor.*_last_locate_status`, `device_tracker.*`,
+plus the `huawei_find.refresh`, `huawei_find.set_cookie` and `huawei_find.refresh_cookie` services.
 
 ### Recommended settings
 
@@ -315,12 +340,14 @@ makes it more likely to lose the session (and require pasting a new cookie).
 
 ### Known limitations
 
-- Ringing only works for your own devices (phones, watches, bands), not for shared ones;
+- Ringing only works for your own phones, watches, bands, Tags and `bell` earbuds, not for shared ones;
 - Watches/bands can be located too when online; offline ones report "device inactive";
 - Returned coordinates may come from Huawei's cache;
 - Address lookup is best effort and falls back to the previous address;
-- Session lifetime is not fixed and there is no automatic renewal: when it expires you must
-  paste a new cookie.
+- Session lifetime is not fixed; without the optional browserless/account login you must paste
+  a new cookie when it expires;
+- Browser login stores the Huawei password in plain text in HA's `.storage` — opt in only if
+  you accept that.
 
 ## License
 
