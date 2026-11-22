@@ -5,9 +5,11 @@
 
 把华为云空间「查找设备」接入 Home Assistant：**点一个按钮，让设备立刻上报一次位置、电量与状态**，
 找回设备时还能让它响铃；手表/手环/Tag/耳机还可停止响铃（手机无远程停止）。
+**手机端不需要安装任何 App**，集成直接读取华为云返回的数据。
 
 Trigger a Huawei Cloud *Find Device* query from Home Assistant — refresh a device's location,
-battery and status on demand, or make the phone ring.
+battery and status on demand, or make the phone ring. **No app is needed on the phone** — the
+integration reads everything from Huawei Cloud.
 
 > 非官方集成，依赖华为云网页版，接口调整可能导致失效。请仅用于自己或已授权的家人设备。  
 > Unofficial integration built on the Huawei Cloud web portal. It may break if Huawei
