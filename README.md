@@ -36,14 +36,20 @@ battery and status on demand, or make the phone ring.
 
 ### 为什么需要它
 
-华为手机装 Home Assistant Companion App 后，定位经常因为省电策略而延迟。
-在华为云网页上点一次「查找设备 → 定位」，会唤醒手机侧定位服务，随后 Companion App
-也会跟着更新。本集成把这一步自动化成按钮，并直接读取华为云返回的位置。
+**不需要在手机上安装 Home Assistant Companion App，也不依赖手机端任何 HA 组件。**
+集成用 Cookie 直接请求华为云「查找设备」，自己生成 GPS `device_tracker`、电量、网络和定位状态实体；
+只要设备在华为账号里（手机 / 手表 / 手环 / Tag / 耳机），就能被 HA 追踪。
+
+最初的动机是：华为手机装了 Companion App 后，定位经常因省电策略延迟；在华为云网页点一次
+「查找设备 → 定位」会唤醒手机侧定位服务，Companion App 往往也会跟着更新。集成把这步自动化成按钮，
+并直接读取华为云返回的位置。所以 App 是**可选加分项**，不是前提：装了它，地图上会多一路 HA 自带的定位；
+没装，本集成的追踪照样工作。
 
 ### 功能
 
 **定位与追踪**
 
+- **不需要手机端 App**：设备上无需安装 Home Assistant Companion App，也不依赖任何手机端 HA 组件；`device_tracker` 和传感器由集成从华为云生成（设备需在华为云「查找设备」里可见、能联网）；
 - 一个「刷新全部设备信息」按钮 + 每台设备一个「刷新设备信息」按钮，自有设备和家人共享设备都支持；
 - 定位传感器显示地址；配置了地址源后不再显示经纬度，反查失败时显示「地址解析失败」，坐标仍保留在属性里；
 - 每台设备一个 GPS 追踪器，可绑定到 `person`，在原生地图显示；
@@ -260,15 +266,23 @@ Cookie 仍是主认证。会话失效时可选用 browserless 无头登录自动
 
 ### Why
 
-The HA Companion app often reports stale locations on Huawei phones because of
-aggressive battery management. Querying *Find Device* on the Huawei Cloud portal wakes
-the phone's location service. This integration turns that into a HA button and reads the
-resulting position.
+**You don't need the HA Companion app — or any HA agent — on the phone.** The integration
+queries Huawei Cloud *Find Device* with a cookie and creates its own GPS `device_tracker`,
+battery, network and locate-status entities; any device in the Huawei account (phone, watch,
+band, Tag, earbuds) can be tracked.
+
+The original motivation: with the Companion app installed, Huawei's battery management often
+makes its location reports stale; tapping *Find Device → Locate* on the portal wakes the
+phone's location service, and the Companion app usually refreshes too. This integration
+automates that tap and reads the position from Huawei Cloud. The app is an optional bonus,
+not a prerequisite: with it you get a second, HA-native position; without it the tracker
+still works.
 
 ### Features
 
 **Location and tracking**
 
+- **No phone-side app required** — entities and the tracker come from Huawei Cloud; the Companion app is optional;
 - One "refresh all device info" button plus a per-device "refresh device info" button (own and shared devices);
 - Address sensor (coordinates only when no address source is configured);
 - GPS `device_tracker` per device, ready to attach to a `person`;
