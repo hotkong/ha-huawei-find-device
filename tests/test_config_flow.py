@@ -319,7 +319,7 @@ class CopyConsistencyTests(unittest.TestCase):
                 identity_error = data["error"]["device_identity_error"].lower()
                 self.assertNotIn("reset device", identity_error)
                 self.assertNotIn("重置", identity_error)
-                reauth = data["step"]["reauth_confirm"]["description"].lower()
+                reauth = data["step"]["reauth"]["description"].lower()
                 self.assertNotIn("both methods", reauth)
                 self.assertNotIn("同一页", reauth)
 
@@ -332,7 +332,7 @@ class CopyConsistencyTests(unittest.TestCase):
         )
         for relative in files:
             with self.subTest(file=relative):
-                step = self._load(relative)["config"]["step"]["reauth_confirm"]
+                step = self._load(relative)["config"]["step"]["reauth"]
                 self.assertIn("menu_options", step)
                 self.assertNotIn("data", step)
                 self.assertNotIn("data_description", step)
@@ -355,12 +355,12 @@ class ReauthMenuOrderTests(unittest.IsolatedAsyncioTestCase):
         result = await flow.async_step_reauth({CONF_DEVICE_ID: DEVICE_ID})
 
         self.assertEqual(result["type"], "menu")
+        self.assertEqual(result["step_id"], "reauth")
         self.assertEqual(
             result["menu_options"],
             ["reauth_account", "reauth_paste", "reauth_browser"],
         )
         self.assertEqual(result["description_placeholders"]["account"], "5581")
-        self.assertFalse(hasattr(flow, "async_step_reauth_confirm"))
 
     async def test_user_menu_puts_the_account_path_first(self):
         flow = self._flow()
@@ -368,6 +368,27 @@ class ReauthMenuOrderTests(unittest.IsolatedAsyncioTestCase):
         result = await flow.async_step_user()
 
         self.assertEqual(result["menu_options"], ["account", "paste", "browser"])
+
+    async def test_every_menu_step_id_has_a_handler_method(self):
+        """Home Assistant raises UnknownStep unless async_step_<step_id> exists.
+
+        A menu result is checked the same way as a form, so a menu whose
+        step_id has no method aborts the flow before any repair issue is made.
+        """
+        flow = self._flow()
+        entry = MagicMock()
+        entry.unique_id = "huawei_30086000615965581"
+        flow.hass.config_entries.async_get_entry.return_value = entry
+
+        for result in (
+            await flow.async_step_user(),
+            await flow.async_step_reauth({CONF_DEVICE_ID: DEVICE_ID}),
+        ):
+            with self.subTest(step_id=result["step_id"]):
+                self.assertTrue(
+                    hasattr(flow, f"async_step_{result['step_id']}"),
+                    f"no async_step_{result['step_id']} for the menu",
+                )
 
 
 class BrowserSchemaDefaultsTests(unittest.TestCase):

@@ -576,7 +576,7 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
             getattr(self, "context", {}).get("entry_id", "")
         )
         return self.async_show_menu(
-            step_id="reauth_confirm",
+            step_id="reauth",
             menu_options=["reauth_account", "reauth_paste", "reauth_browser"],
             description_placeholders={"account": _account_tail(entry)},
         )
