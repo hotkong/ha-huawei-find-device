@@ -245,7 +245,7 @@ _REAUTH_NOTICE: dict[str, dict[str, str]] = {
         "guide": (
             "\n\n重新验证：设置 → 设备与服务 → Huawei Cloud Find Device → 重新验证。\n"
             "· 华为账号密码：免抓 Cookie；会结束该账号的其他网页会话\n"
-            "· 粘贴新 Cookie：最快；需登录 cloud.huawei.com 复制请求头\n"
+            "· 粘贴新 Cookie：最快；需登录 [cloud.huawei.com](https://cloud.huawei.com/) 复制请求头\n"
             "· browserless：需已配置浏览器服务"
         ),
     },
@@ -260,7 +260,7 @@ _REAUTH_NOTICE: dict[str, dict[str, str]] = {
             "· Huawei account and password: no cookie hunting; "
             "ends other web sessions\n"
             "· Paste a new Cookie: fastest; copy the request header from "
-            "cloud.huawei.com\n"
+            "[cloud.huawei.com](https://cloud.huawei.com/)\n"
             "· browserless: needs a configured browser service"
         ),
     },

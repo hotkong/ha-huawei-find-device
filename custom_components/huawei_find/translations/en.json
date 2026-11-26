@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Huawei Cloud",
-        "description": "Choose how to authenticate:\n- Huawei account and password (recommended): nothing extra to run and no cookie hunting; signing in ends other web sessions of the same account.\n- Paste a Cookie: fastest; copy the request header from the cloud.huawei.com Find Device page.\n- browserless: needs a browser service you run yourself.",
+        "description": "Choose how to authenticate:\n- Huawei account and password (recommended): nothing extra to run and no cookie hunting; signing in ends other web sessions of the same account.\n- Paste a Cookie: fastest; copy the request header from the [cloud.huawei.com](https://cloud.huawei.com/) Find Device page.\n- browserless: needs a browser service you run yourself.",
         "menu_options": {
           "account": "Huawei account and password (recommended)",
           "paste": "Paste a Cookie",
@@ -20,7 +20,7 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate Huawei Cloud",
-        "description": "Account ending {account}. Choose how to renew:\n- Huawei account and password (recommended): no cookie hunting; signing in ends other web sessions of the same account.\n- Paste a new Cookie: fastest; copy the request header from cloud.huawei.com.\n- browserless: needs a configured browser service.",
+        "description": "Account ending {account}. Choose how to renew:\n- Huawei account and password (recommended): no cookie hunting; signing in ends other web sessions of the same account.\n- Paste a new Cookie: fastest; copy the request header from [cloud.huawei.com](https://cloud.huawei.com/).\n- browserless: needs a configured browser service.",
         "menu_options": {
           "reauth_account": "Huawei account and password (recommended)",
           "reauth_paste": "Paste a new Cookie",

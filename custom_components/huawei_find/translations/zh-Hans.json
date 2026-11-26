@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "连接华为云",
-        "description": "选择认证方式：\n- 华为账号密码（推荐）：无需额外服务、不用抓 Cookie；登录会结束该账号的其他网页会话。\n- 粘贴 Cookie：最快；需登录 cloud.huawei.com 复制请求头。\n- browserless：需要自己运行浏览器服务。",
+        "description": "选择认证方式：\n- 华为账号密码（推荐）：无需额外服务、不用抓 Cookie；登录会结束该账号的其他网页会话。\n- 粘贴 Cookie：最快；需登录 [cloud.huawei.com](https://cloud.huawei.com/) 复制请求头。\n- browserless：需要自己运行浏览器服务。",
         "menu_options": {
           "account": "华为账号密码（推荐）",
           "paste": "粘贴 Cookie",
@@ -20,7 +20,7 @@
       },
       "reauth_confirm": {
         "title": "重新授权华为云",
-        "description": "账号尾号 {account}。选择续期方式：\n- 华为账号密码（推荐）：不用抓 Cookie；登录会结束该账号的其他网页会话。\n- 粘贴新 Cookie：最快；需登录 cloud.huawei.com 复制请求头。\n- browserless：需已配置浏览器服务。",
+        "description": "账号尾号 {account}。选择续期方式：\n- 华为账号密码（推荐）：不用抓 Cookie；登录会结束该账号的其他网页会话。\n- 粘贴新 Cookie：最快；需登录 [cloud.huawei.com](https://cloud.huawei.com/) 复制请求头。\n- browserless：需已配置浏览器服务。",
         "menu_options": {
           "reauth_account": "华为账号密码（推荐）",
           "reauth_paste": "粘贴新 Cookie",
