@@ -441,5 +441,64 @@ class ReauthNoticeTests(unittest.TestCase):
         self.assertIn("cloud.huawei.com", message)
 
 
+class RedrawReturnsToMenuTests(unittest.IsolatedAsyncioTestCase):
+    """Reopening a half-filled flow must show the menu again.
+
+    Home Assistant reopens the flow at its current step and closing the dialog
+    does not abort it, so every sub-step has to fall back to the menu when it is
+    redrawn with no user input.
+    """
+
+    def _flow(self, source: str) -> HuaweiFindConfigFlow:
+        flow = HuaweiFindConfigFlow()
+        flow.hass = MagicMock()
+        flow.context = {"source": source, "entry_id": "abc"}
+        flow.hass.config_entries.async_get_entry.return_value = None
+        return flow
+
+    async def test_reauth_sub_steps_return_to_the_menu(self):
+        steps = (
+            "async_step_reauth_paste",
+            "async_step_reauth_account",
+            "async_step_reauth_browser",
+            "async_step_reauth_preview",
+        )
+        for step in steps:
+            with self.subTest(step=step):
+                flow = self._flow("reauth")
+                flow.cur_step = {"step_id": step.replace("async_step_", "")}
+                result = await getattr(flow, step)(None)
+                self.assertEqual(result["type"], "menu")
+                self.assertEqual(result["step_id"], "reauth_confirm")
+
+    async def test_add_flow_sub_steps_return_to_the_user_menu(self):
+        steps = (
+            "async_step_paste",
+            "async_step_account",
+            "async_step_browser",
+            "async_step_cookie_preview",
+        )
+        for step in steps:
+            with self.subTest(step=step):
+                flow = self._flow("user")
+                flow.cur_step = {"step_id": step.replace("async_step_", "")}
+                result = await getattr(flow, step)(None)
+                self.assertEqual(result["type"], "menu")
+                self.assertEqual(result["step_id"], "user")
+
+    async def test_menu_selection_still_opens_the_sub_step(self):
+        """Choosing a menu option also arrives as None; it must not bounce back."""
+        flow = self._flow("reauth")
+        flow.cur_step = {"step_id": "reauth_confirm"}
+
+        paste = await flow.async_step_reauth_paste(None)
+        account = await flow.async_step_reauth_account(None)
+        browser = await flow.async_step_reauth_browser(None)
+
+        self.assertEqual(paste["step_id"], "reauth_paste")
+        self.assertEqual(account["step_id"], "reauth_account")
+        self.assertEqual(browser["step_id"], "reauth_browser")
+
+
 if __name__ == "__main__":
     unittest.main()

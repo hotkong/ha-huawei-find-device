@@ -8,6 +8,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import (
+    SOURCE_REAUTH,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -253,12 +254,16 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_account(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if user_input is None and self._is_redraw("account"):
+            return await self._back_to_menu()
         return await self._async_account_step("account", user_input)
 
     async def async_step_account_choice(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Pick which of the Huawei IDs bound to the number to sign in as."""
+        if user_input is None and self._is_redraw("account_choice"):
+            return await self._back_to_menu()
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
@@ -452,6 +457,8 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_paste(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if user_input is None and self._is_redraw("paste"):
+            return await self._back_to_menu()
         errors: dict[str, str] = {}
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
@@ -471,12 +478,20 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_browser(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if (
+            user_input is None
+            and self._login_task is None
+            and self._is_redraw("browser")
+        ):
+            return await self._back_to_menu()
         self._preview_step = "cookie_preview"
         return await self._async_browser_step("browser", user_input)
 
     async def async_step_cookie_preview(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if user_input is None and self._is_redraw("cookie_preview"):
+            return await self._back_to_menu()
         errors: dict[str, str] = {}
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
@@ -571,6 +586,29 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         context = getattr(self, "context", None) or {}
         return self.hass.config_entries.async_get_entry(context.get("entry_id", ""))
 
+    def _is_redraw(self, step_id: str) -> bool:
+        """Whether this call is HA redrawing the step, not a menu selection.
+
+        Both arrive as user_input=None; the difference is cur_step: it
+        still points at the menu when the user picked an option, and it
+        already points at the step itself when the flow is redrawn.
+        """
+        current = getattr(self, "cur_step", None) or {}
+        return current.get("step_id") == step_id
+
+    async def _back_to_menu(self) -> ConfigFlowResult:
+        """Return to the first menu when a sub-step is redrawn without input.
+
+        Home Assistant reopens a flow at its current step and closing the
+        dialog does not abort it, so without this the user stays stuck on the
+        sub-step they opened last instead of seeing the menu again.
+        """
+        if self._reauth_pending or (
+            getattr(self, "context", None) or {}
+        ).get("source") == SOURCE_REAUTH:
+            return await self.async_step_reauth_confirm()
+        return await self.async_step_user()
+
     async def async_step_reauth(
         self, entry_data: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -629,11 +667,15 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth_account(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if user_input is None and self._is_redraw("reauth_account"):
+            return await self._back_to_menu()
         return await self._async_account_step("reauth_account", user_input)
 
     async def async_step_reauth_paste(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if user_input is None and self._is_redraw("reauth_paste"):
+            return await self._back_to_menu()
         errors: dict[str, str] = {}
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
@@ -650,12 +692,20 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth_browser(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if (
+            user_input is None
+            and self._login_task is None
+            and self._is_redraw("reauth_browser")
+        ):
+            return await self._back_to_menu()
         self._preview_step = "reauth_preview"
         return await self._async_browser_step("reauth_browser", user_input)
 
     async def async_step_reauth_preview(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        if user_input is None and self._is_redraw("reauth_preview"):
+            return await self._back_to_menu()
         errors: dict[str, str] = {}
         if user_input is not None:
             cookie = (user_input.get(CONF_COOKIE) or "").strip()
