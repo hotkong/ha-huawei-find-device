@@ -566,19 +566,36 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     # -- re-authorization ---------------------------------------------------
-    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+    def _reauth_entry(self) -> ConfigEntry | None:
+        """The entry being re-authorised, when the flow context still has it."""
+        context = getattr(self, "context", None) or {}
+        return self.hass.config_entries.async_get_entry(context.get("entry_id", ""))
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         self._preview_step = "reauth_preview"
-        self._device_id = str(entry_data.get(CONF_DEVICE_ID) or "").strip() or None
+        entry = self._reauth_entry()
+        data = entry_data or (entry.data if entry else {})
+        self._device_id = str(data.get(CONF_DEVICE_ID) or "").strip() or None
         self._bridge_device_id = (
-            str(entry_data.get(CONF_DEVICE_ID_BRIDGE) or "").strip() or None
+            str(data.get(CONF_DEVICE_ID_BRIDGE) or "").strip() or None
         )
-        entry = self.hass.config_entries.async_get_entry(
-            getattr(self, "context", {}).get("entry_id", "")
-        )
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Render the reauthorization menu.
+
+        Home Assistant redraws a flow by re-invoking the current step with no
+        user input, so this method stays side-effect free and always returns
+        the menu; it must not do any work that only the first call needs.
+        """
         return self.async_show_menu(
-            step_id="reauth",
+            step_id="reauth_confirm",
             menu_options=["reauth_account", "reauth_paste", "reauth_browser"],
-            description_placeholders={"account": _account_tail(entry)},
+            description_placeholders={"account": _account_tail(self._reauth_entry())},
         )
 
     def _finish_reauth(self) -> ConfigFlowResult:

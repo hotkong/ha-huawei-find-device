@@ -18,7 +18,7 @@
           "scan_interval": "自动刷新间隔（分钟，0 = 关闭，默认 15）"
         }
       },
-      "reauth": {
+      "reauth_confirm": {
         "title": "重新授权华为云",
         "description": "账号尾号 {account}。选择续期方式：\n- 华为账号密码（推荐）：不用抓 Cookie；登录会结束该账号的其他网页会话。\n- 粘贴新 Cookie：最快；需登录 cloud.huawei.com 复制请求头。\n- browserless：需已配置浏览器服务。",
         "menu_options": {

@@ -319,7 +319,7 @@ class CopyConsistencyTests(unittest.TestCase):
                 identity_error = data["error"]["device_identity_error"].lower()
                 self.assertNotIn("reset device", identity_error)
                 self.assertNotIn("重置", identity_error)
-                reauth = data["step"]["reauth"]["description"].lower()
+                reauth = data["step"]["reauth_confirm"]["description"].lower()
                 self.assertNotIn("both methods", reauth)
                 self.assertNotIn("同一页", reauth)
 
@@ -332,7 +332,7 @@ class CopyConsistencyTests(unittest.TestCase):
         )
         for relative in files:
             with self.subTest(file=relative):
-                step = self._load(relative)["config"]["step"]["reauth"]
+                step = self._load(relative)["config"]["step"]["reauth_confirm"]
                 self.assertIn("menu_options", step)
                 self.assertNotIn("data", step)
                 self.assertNotIn("data_description", step)
@@ -355,7 +355,7 @@ class ReauthMenuOrderTests(unittest.IsolatedAsyncioTestCase):
         result = await flow.async_step_reauth({CONF_DEVICE_ID: DEVICE_ID})
 
         self.assertEqual(result["type"], "menu")
-        self.assertEqual(result["step_id"], "reauth")
+        self.assertEqual(result["step_id"], "reauth_confirm")
         self.assertEqual(
             result["menu_options"],
             ["reauth_account", "reauth_paste", "reauth_browser"],
@@ -368,6 +368,18 @@ class ReauthMenuOrderTests(unittest.IsolatedAsyncioTestCase):
         result = await flow.async_step_user()
 
         self.assertEqual(result["menu_options"], ["account", "paste", "browser"])
+
+    async def test_reauth_menu_survives_a_redraw_without_entry_data(self):
+        """HA redraws a menu by calling the step again with None; that must work."""
+        flow = self._flow()
+
+        first = await flow.async_step_reauth(None)
+        redraw = await flow.async_step_reauth_confirm(None)
+
+        for result in (first, redraw):
+            with self.subTest(result=result["step_id"]):
+                self.assertEqual(result["type"], "menu")
+                self.assertEqual(result["step_id"], "reauth_confirm")
 
     async def test_every_menu_step_id_has_a_handler_method(self):
         """Home Assistant raises UnknownStep unless async_step_<step_id> exists.

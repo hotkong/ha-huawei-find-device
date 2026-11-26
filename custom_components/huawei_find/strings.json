@@ -18,7 +18,7 @@
           "scan_interval": "Automatic refresh interval (minutes, 0 = disabled, default 15)"
         }
       },
-      "reauth": {
+      "reauth_confirm": {
         "title": "Re-authenticate Huawei Cloud",
         "description": "Account ending {account}. Choose how to renew:\n- Huawei account and password (recommended): no cookie hunting; signing in ends other web sessions of the same account.\n- Paste a new Cookie: fastest; copy the request header from cloud.huawei.com.\n- browserless: needs a configured browser service.",
         "menu_options": {
