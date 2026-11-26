@@ -3,11 +3,11 @@
     "step": {
       "user": {
         "title": "连接华为云",
-        "description": "选择认证方式：从 [cloud.huawei.com](https://cloud.huawei.com/) 的「查找设备」请求头粘贴 Cookie，用 browserless 登录获取，或直接用华为账号密码登录。",
+        "description": "选择认证方式：\n- 华为账号密码（推荐）：无需额外服务、不用抓 Cookie；登录会结束该账号的其他网页会话。\n- 粘贴 Cookie：最快；需登录 cloud.huawei.com 复制请求头。\n- browserless：需要自己运行浏览器服务。",
         "menu_options": {
+          "account": "华为账号密码（推荐）",
           "paste": "粘贴 Cookie",
-          "browser": "用浏览器获取 Cookie",
-          "account": "华为账号密码"
+          "browser": "browserless 自动登录"
         }
       },
       "devices": {
@@ -20,29 +20,11 @@
       },
       "reauth_confirm": {
         "title": "重新授权华为云",
-        "description": "选择续期方式：粘贴新 Cookie、用 browserless 获取，或用华为账号密码重新登录。",
+        "description": "账号尾号 {account}。选择续期方式：\n- 华为账号密码（推荐）：不用抓 Cookie；登录会结束该账号的其他网页会话。\n- 粘贴新 Cookie：最快；需登录 cloud.huawei.com 复制请求头。\n- browserless：需已配置浏览器服务。",
         "menu_options": {
+          "reauth_account": "华为账号密码（推荐）",
           "reauth_paste": "粘贴新 Cookie",
-          "reauth_browser": "用浏览器获取 Cookie",
-          "reauth_account": "华为账号密码"
-        },
-        "data": {
-          "browser_login": "使用浏览器登录",
-          "cookie": "Cookie",
-          "browser_url": "browserless 地址",
-          "browser_token": "browserless Token",
-          "username": "华为账号",
-          "password": "密码",
-          "store_credentials": "保存浏览器凭据"
-        },
-        "data_description": {
-          "browser_login": "不勾选则直接粘贴 Cookie；勾选后填写下面的 browserless 和账号信息。",
-          "cookie": "从 cloud.huawei.com「查找设备」请求头复制完整 Cookie。",
-          "browser_url": "browserless v2 地址，例如 http://192.168.1.100:3000。",
-          "browser_token": "仅当 browserless 启用了 token 时填写。",
-          "username": "用于无头浏览器登录的华为账号。",
-          "password": "与账号一起明文保存在该条目的 .storage 中。",
-          "store_credentials": "取消勾选则本次不把凭据写入条目。"
+          "reauth_browser": "browserless 自动登录"
         }
       },
       "init": {
@@ -81,7 +63,7 @@
           "store_credentials": "保存这些凭据用于以后自动重登"
         },
         "data_description": {
-          "store_credentials": "勾选后凭据会明文保存在该条目的 .storage 中。"
+          "store_credentials": "默认不保存；勾选后凭据会明文写入该条目的 .storage。"
         }
       },
       "reauth_paste": {
@@ -102,7 +84,7 @@
           "store_credentials": "保存这些凭据用于以后自动重登"
         },
         "data_description": {
-          "store_credentials": "勾选后凭据会明文保存在该条目的 .storage 中。"
+          "store_credentials": "默认不保存；勾选后凭据会明文写入该条目的 .storage。"
         }
       },
       "account": {

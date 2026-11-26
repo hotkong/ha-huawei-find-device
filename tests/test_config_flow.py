@@ -7,9 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.huawei_find import auth
 from custom_components.huawei_find.config_flow import (
+    BROWSER_SCHEMA,
     HuaweiFindConfigFlow,
     _scan_interval_value,
 )
+from custom_components.huawei_find.helpers import reauth_notice_text
 from custom_components.huawei_find.const import (
     CONF_DEVICES,
     CONF_DEVICE_ID,
@@ -320,6 +322,90 @@ class CopyConsistencyTests(unittest.TestCase):
                 reauth = data["step"]["reauth_confirm"]["description"].lower()
                 self.assertNotIn("both methods", reauth)
                 self.assertNotIn("同一页", reauth)
+
+    def test_reauth_menu_has_no_legacy_form_copy(self):
+        """The single-page form is gone: keep its 7 data fields out too."""
+        files = (
+            "custom_components/huawei_find/strings.json",
+            "custom_components/huawei_find/translations/en.json",
+            "custom_components/huawei_find/translations/zh-Hans.json",
+        )
+        for relative in files:
+            with self.subTest(file=relative):
+                step = self._load(relative)["config"]["step"]["reauth_confirm"]
+                self.assertIn("menu_options", step)
+                self.assertNotIn("data", step)
+                self.assertNotIn("data_description", step)
+
+
+class ReauthMenuOrderTests(unittest.IsolatedAsyncioTestCase):
+    """The cheapest path comes first and the legacy form step stays gone."""
+
+    def _flow(self) -> HuaweiFindConfigFlow:
+        flow = HuaweiFindConfigFlow()
+        flow.hass = MagicMock()
+        return flow
+
+    async def test_reauth_menu_puts_the_account_path_first(self):
+        flow = self._flow()
+        entry = MagicMock()
+        entry.unique_id = "huawei_30086000615965581"
+        flow.hass.config_entries.async_get_entry.return_value = entry
+
+        result = await flow.async_step_reauth({CONF_DEVICE_ID: DEVICE_ID})
+
+        self.assertEqual(result["type"], "menu")
+        self.assertEqual(
+            result["menu_options"],
+            ["reauth_account", "reauth_paste", "reauth_browser"],
+        )
+        self.assertEqual(result["description_placeholders"]["account"], "5581")
+        self.assertFalse(hasattr(flow, "async_step_reauth_confirm"))
+
+    async def test_user_menu_puts_the_account_path_first(self):
+        flow = self._flow()
+
+        result = await flow.async_step_user()
+
+        self.assertEqual(result["menu_options"], ["account", "paste", "browser"])
+
+
+class BrowserSchemaDefaultsTests(unittest.TestCase):
+    def test_credentials_are_not_stored_by_default(self):
+        validated = BROWSER_SCHEMA(
+            {
+                "browser_url": "http://browser:3000",
+                "username": "user",
+                "password": "pass",
+            }
+        )
+
+        self.assertIs(validated["store_credentials"], False)
+
+
+class ReauthNoticeTests(unittest.TestCase):
+    def _hass(self, language: str):
+        hass = MagicMock()
+        hass.config.language = language
+        return hass
+
+    def test_chinese_notice_lists_all_three_paths(self):
+        title, message = reauth_notice_text(
+            self._hass("zh-Hans"), "expired", "", False
+        )
+
+        self.assertIn("重新授权", title)
+        self.assertIn("华为账号密码", message)
+        self.assertIn("粘贴新 Cookie", message)
+        self.assertIn("browserless", message)
+        self.assertIn("未配置自动重登", message)
+
+    def test_english_notice_follows_the_language_and_reports_the_error(self):
+        title, message = reauth_notice_text(self._hass("en"), "expired", "boom", True)
+
+        self.assertIn("re-authentication", title.lower())
+        self.assertIn("Automatic re-login failed: boom", message)
+        self.assertIn("cloud.huawei.com", message)
 
 
 if __name__ == "__main__":

@@ -3,11 +3,11 @@
     "step": {
       "user": {
         "title": "Connect to Huawei Cloud",
-        "description": "Choose how to authenticate: paste a Cookie from the [cloud.huawei.com](https://cloud.huawei.com/) Find Device request header, get one through browserless, or sign in with your Huawei account.",
+        "description": "Choose how to authenticate:\n- Huawei account and password (recommended): nothing extra to run and no cookie hunting; signing in ends other web sessions of the same account.\n- Paste a Cookie: fastest; copy the request header from the cloud.huawei.com Find Device page.\n- browserless: needs a browser service you run yourself.",
         "menu_options": {
+          "account": "Huawei account and password (recommended)",
           "paste": "Paste a Cookie",
-          "browser": "Get a Cookie with a browser",
-          "account": "Huawei account and password"
+          "browser": "browserless auto-login"
         }
       },
       "devices": {
@@ -20,29 +20,11 @@
       },
       "reauth_confirm": {
         "title": "Re-authenticate Huawei Cloud",
-        "description": "Choose how to renew this account's session: paste a new Cookie, use browserless, or sign in with the Huawei account.",
+        "description": "Account ending {account}. Choose how to renew:\n- Huawei account and password (recommended): no cookie hunting; signing in ends other web sessions of the same account.\n- Paste a new Cookie: fastest; copy the request header from cloud.huawei.com.\n- browserless: needs a configured browser service.",
         "menu_options": {
+          "reauth_account": "Huawei account and password (recommended)",
           "reauth_paste": "Paste a new Cookie",
-          "reauth_browser": "Get a Cookie with a browser",
-          "reauth_account": "Huawei account and password"
-        },
-        "data": {
-          "browser_login": "Use browser login",
-          "cookie": "Cookie",
-          "browser_url": "browserless URL",
-          "browser_token": "browserless token",
-          "username": "Huawei account",
-          "password": "Password",
-          "store_credentials": "Store browser credentials"
-        },
-        "data_description": {
-          "browser_login": "Leave unchecked to paste a Cookie; tick to use the browserless endpoint and account below.",
-          "cookie": "Copy the full Cookie request header from the cloud.huawei.com Find Device page.",
-          "browser_url": "browserless v2 endpoint, e.g. http://192.168.1.100:3000.",
-          "browser_token": "Only needed when your browserless instance requires a token.",
-          "username": "Huawei account used for the headless login.",
-          "password": "Stored in plain text in this entry's .storage.",
-          "store_credentials": "Uncheck to avoid writing the credentials into the entry."
+          "reauth_browser": "browserless auto-login"
         }
       },
       "init": {
@@ -81,7 +63,7 @@
           "store_credentials": "Store these credentials for automatic re-login"
         },
         "data_description": {
-          "store_credentials": "The credentials are stored in plain text in this entry's .storage."
+          "store_credentials": "Off by default. When ticked, the credentials are stored in plain text in this entry's .storage."
         }
       },
       "reauth_paste": {
@@ -102,7 +84,7 @@
           "store_credentials": "Store these credentials for automatic re-login"
         },
         "data_description": {
-          "store_credentials": "The credentials are stored in plain text in this entry’s .storage."
+          "store_credentials": "Off by default. When ticked, the credentials are stored in plain text in this entry's .storage."
         }
       },
       "account": {

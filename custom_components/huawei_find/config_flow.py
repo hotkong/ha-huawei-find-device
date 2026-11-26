@@ -96,7 +96,7 @@ BROWSER_SCHEMA = vol.Schema(
         vol.Required(CONF_HW_PASSWORD): TextSelector(
             TextSelectorConfig(type=TextSelectorType.PASSWORD)
         ),
-        vol.Optional("store_credentials", default=True): BooleanSelector(
+        vol.Optional("store_credentials", default=False): BooleanSelector(
             BooleanSelectorConfig()
         ),
     }
@@ -115,6 +115,13 @@ ACCOUNT_SCHEMA = vol.Schema(
         ),
     }
 )
+
+
+def _account_tail(entry: ConfigEntry | None) -> str:
+    """The last four digits of the account id, for the reauth menu copy."""
+    unique_id = str(getattr(entry, "unique_id", "") or "")
+    tail = unique_id.rsplit("_", 1)[-1]
+    return tail[-4:] if len(tail) > 4 else tail
 
 
 class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -325,7 +332,7 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         # existing options instead of overwriting them with empty strings.
         if not self._browser_input:
             return {}
-        if not self._browser_input.get("store_credentials", True):
+        if not self._browser_input.get("store_credentials", False):
             return {}
         return {
             CONF_BROWSER_URL: self._browser_input.get(CONF_BROWSER_URL, ""),
@@ -351,7 +358,7 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_HW_PASSWORD, default=d.get(CONF_HW_PASSWORD, "")
                 ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
                 vol.Optional(
-                    "store_credentials", default=d.get("store_credentials", True)
+                    "store_credentials", default=d.get("store_credentials", False)
                 ): BooleanSelector(BooleanSelectorConfig()),
             }
         )
@@ -387,7 +394,7 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_HW_USERNAME: (user_input.get(CONF_HW_USERNAME) or "").strip(),
                 CONF_HW_PASSWORD: user_input.get(CONF_HW_PASSWORD) or "",
                 "store_credentials": bool(
-                    user_input.get("store_credentials", True)
+                    user_input.get("store_credentials", False)
                 ),
             }
             if not (
@@ -439,7 +446,7 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         return self.async_show_menu(
-            step_id="user", menu_options=["paste", "browser", "account"]
+            step_id="user", menu_options=["account", "paste", "browser"]
         )
 
     async def async_step_paste(
@@ -565,9 +572,13 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
         self._bridge_device_id = (
             str(entry_data.get(CONF_DEVICE_ID_BRIDGE) or "").strip() or None
         )
+        entry = self.hass.config_entries.async_get_entry(
+            getattr(self, "context", {}).get("entry_id", "")
+        )
         return self.async_show_menu(
             step_id="reauth_confirm",
-            menu_options=["reauth_paste", "reauth_browser", "reauth_account"],
+            menu_options=["reauth_account", "reauth_paste", "reauth_browser"],
+            description_placeholders={"account": _account_tail(entry)},
         )
 
     def _finish_reauth(self) -> ConfigFlowResult:

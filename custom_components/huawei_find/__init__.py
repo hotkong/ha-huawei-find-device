@@ -57,6 +57,7 @@ from .helpers import (  # noqa: F401  (re-exported for platforms and tests)
     build_device_info,
     device_identifiers,
     prune_removed_devices,
+    reauth_notice_text,
     serialize_cookies,
     signal_account,
     signal_update,
@@ -113,12 +114,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         all_devices = await client.async_get_devices()
     except HuaweiFindAuthError as err:
         await client.async_close()
+        has_fallback = bool(
+            entry.options.get(CONF_BROWSER_URL)
+            and entry.options.get(CONF_HW_USERNAME)
+            and entry.options.get(CONF_HW_PASSWORD)
+        )
+        title, message = reauth_notice_text(hass, str(err), "", has_fallback)
         persistent_notification.async_create(
             hass,
-            f"The Huawei Cloud session has expired ({err}).\n\n"
-            "Go to Settings > Devices & Services > Huawei Cloud Find Device "
-            "and click Re-authenticate, then paste a fresh Cookie.",
-            title="Huawei Cloud Find Device: re-authentication required",
+            message,
+            title=title,
             notification_id=f"{DOMAIN}_reauth_{entry.entry_id}",
         )
         try:

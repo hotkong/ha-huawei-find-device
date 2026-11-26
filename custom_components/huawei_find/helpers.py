@@ -236,6 +236,53 @@ def _interval_minutes(value: Any) -> int:
         return 0
 
 
+_REAUTH_NOTICE: dict[str, dict[str, str]] = {
+    "zh": {
+        "title": "华为云需要重新授权",
+        "expired": "华为云会话已过期（{reason}）。",
+        "failed": "\n\n自动重登失败：{error}",
+        "none": "\n\n未配置自动重登。",
+        "guide": (
+            "\n\n重新验证：设置 → 设备与服务 → Huawei Cloud Find Device → 重新验证。\n"
+            "· 华为账号密码：免抓 Cookie；会结束该账号的其他网页会话\n"
+            "· 粘贴新 Cookie：最快；需登录 cloud.huawei.com 复制请求头\n"
+            "· browserless：需已配置浏览器服务"
+        ),
+    },
+    "en": {
+        "title": "Huawei Cloud: re-authentication required",
+        "expired": "The Huawei Cloud session has expired ({reason}).",
+        "failed": "\n\nAutomatic re-login failed: {error}",
+        "none": "\n\nNo automatic re-login is configured.",
+        "guide": (
+            "\n\nRe-authenticate: Settings → Devices & Services → "
+            "Huawei Cloud Find Device.\n"
+            "· Huawei account and password: no cookie hunting; "
+            "ends other web sessions\n"
+            "· Paste a new Cookie: fastest; copy the request header from "
+            "cloud.huawei.com\n"
+            "· browserless: needs a configured browser service"
+        ),
+    },
+}
+
+
+def reauth_notice_text(
+    hass: HomeAssistant, reason: str, login_error: str, has_fallback: bool
+) -> tuple[str, str]:
+    """Localised title and body for the expired-session notification."""
+    language = str(getattr(hass.config, "language", "") or "").lower()
+    texts = _REAUTH_NOTICE["zh" if language.startswith("zh") else "en"]
+    if login_error:
+        detail = texts["failed"].format(error=login_error)
+    elif not has_fallback:
+        detail = texts["none"]
+    else:
+        detail = ""
+    message = texts["expired"].format(reason=reason) + detail + texts["guide"]
+    return texts["title"], message
+
+
 def _notify_reauth(hass: HomeAssistant, runtime: HuaweiFindRuntime, reason: str) -> None:
     """Ask the user to re-authenticate; only once until it succeeds again."""
     if runtime.reauth_requested:
@@ -246,22 +293,13 @@ def _notify_reauth(hass: HomeAssistant, runtime: HuaweiFindRuntime, reason: str)
         and runtime.browser_username
         and runtime.browser_password
     )
-    if runtime.login_error:
-        detail = f"\n\nAutomatic re-login failed: {runtime.login_error}"
-    elif not has_fallback:
-        detail = (
-            "\n\nNo automatic re-login is configured; "
-            "paste a fresh Cookie to restore the session."
-        )
-    else:
-        detail = ""
+    title, message = reauth_notice_text(
+        hass, reason, runtime.login_error or "", has_fallback
+    )
     persistent_notification.async_create(
         hass,
-        f"The Huawei Cloud session has expired ({reason}).{detail}\n\n"
-        "Go to Settings > Devices & Services > Huawei Cloud Find Device "
-        "and click Re-authenticate, then log in to cloud.huawei.com again "
-        "and paste the new Cookie.",
-        title="Huawei Cloud Find Device: re-authentication required",
+        message,
+        title=title,
         notification_id=f"{DOMAIN}_reauth_{runtime.entry.entry_id}",
     )
     runtime.entry.async_start_reauth(hass)
