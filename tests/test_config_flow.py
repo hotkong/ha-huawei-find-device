@@ -9,6 +9,7 @@ from custom_components.huawei_find import auth
 from custom_components.huawei_find.config_flow import (
     BROWSER_SCHEMA,
     HuaweiFindConfigFlow,
+    _browser_error_note,
     _scan_interval_value,
 )
 from custom_components.huawei_find.helpers import reauth_notice_text
@@ -498,6 +499,40 @@ class RedrawReturnsToMenuTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(paste["step_id"], "reauth_paste")
         self.assertEqual(account["step_id"], "reauth_account")
         self.assertEqual(browser["step_id"], "reauth_browser")
+
+
+class BrowserErrorNoteTests(unittest.TestCase):
+    def _hass(self, language: str):
+        hass = MagicMock()
+        hass.config.language = language
+        return hass
+
+    def test_empty_when_the_last_attempt_did_not_fail(self):
+        self.assertEqual(_browser_error_note(self._hass("zh-Hans"), ""), "")
+
+    def test_chinese_prefix(self):
+        text = _browser_error_note(self._hass("zh-Hans"), "timeout")
+        self.assertTrue(text.startswith("最近一次错误：timeout"))
+
+    def test_english_prefix(self):
+        text = _browser_error_note(self._hass("en"), "timeout")
+        self.assertTrue(text.startswith("Last error: timeout"))
+
+
+class BrowserFormCopyTests(unittest.TestCase):
+    """The note is prepended by code, so the copy must not keep a dangling label."""
+
+    def test_browser_steps_start_with_the_error_placeholder(self):
+        root = Path(__file__).resolve().parents[1]
+        for relative in (
+            "custom_components/huawei_find/strings.json",
+            "custom_components/huawei_find/translations/en.json",
+            "custom_components/huawei_find/translations/zh-Hans.json",
+        ):
+            steps = json.loads((root / relative).read_text(encoding="utf-8"))["config"]["step"]
+            for step in ("browser", "reauth_browser"):
+                with self.subTest(file=relative, step=step):
+                    self.assertTrue(steps[step]["description"].startswith("{error}"))
 
 
 if __name__ == "__main__":

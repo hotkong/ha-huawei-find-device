@@ -54,7 +54,7 @@
       },
       "browser": {
         "title": "用无头浏览器获取 Cookie",
-        "description": "填写 browserless 地址与华为账号密码，提交后会登录并生成 Cookie 供你确认。\n\n最近一次错误：{error}",
+        "description": "{error}填写 browserless 地址与华为账号密码，提交后会登录并生成 Cookie 供你确认。",
         "data": {
           "browser_url": "无头浏览器地址",
           "browser_token": "Browserless 令牌（可选）",
@@ -75,7 +75,7 @@
       },
       "reauth_browser": {
         "title": "用浏览器获取 Cookie",
-        "description": "填写 browserless 地址与华为账号密码，提交后会登录并生成 Cookie 供你确认。\n\n最近一次错误：{error}",
+        "description": "{error}填写 browserless 地址与华为账号密码，提交后会登录并生成 Cookie 供你确认。",
         "data": {
           "browser_url": "无头浏览器地址",
           "browser_token": "Browserless 令牌（可选）",

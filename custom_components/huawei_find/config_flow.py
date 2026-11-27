@@ -118,6 +118,18 @@ ACCOUNT_SCHEMA = vol.Schema(
 )
 
 
+def _is_chinese(hass: HomeAssistant) -> bool:
+    return str(getattr(hass.config, "language", "") or "").lower().startswith("zh")
+
+
+def _browser_error_note(hass: HomeAssistant, error: str) -> str:
+    """Lead-in for the browser form; empty when the last attempt did not fail."""
+    if not error:
+        return ""
+    prefix = "最近一次错误：" if _is_chinese(hass) else "Last error: "
+    return f"{prefix}{error}\n\n"
+
+
 def _account_tail(entry: ConfigEntry | None) -> str:
     """The last four digits of the account id, for the reauth menu copy."""
     unique_id = str(getattr(entry, "unique_id", "") or "")
@@ -428,7 +440,9 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
             self._login_task = None
             if self._login_error:
                 errors["base"] = "browser_login_failed"
-                placeholders["error"] = self._login_error[:250]
+                placeholders["error"] = _browser_error_note(
+                    self.hass, self._login_error[:250]
+                )
                 self._login_error = None
             elif self._login_cookie:
                 self._cookie = self._login_cookie
@@ -437,7 +451,12 @@ class HuaweiFindConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
             else:
                 errors["base"] = "browser_login_failed"
-                placeholders["error"] = "no cookie returned"
+                detail = (
+                    "浏览器没有返回 Cookie"
+                    if _is_chinese(self.hass)
+                    else "the browser returned no cookie"
+                )
+                placeholders["error"] = _browser_error_note(self.hass, detail)
 
         return self.async_show_form(
             step_id=step_id,

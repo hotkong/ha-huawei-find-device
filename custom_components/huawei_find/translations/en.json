@@ -54,7 +54,7 @@
       },
       "browser": {
         "title": "Get a Cookie with a browser",
-        "description": "Fill in the browserless endpoint and credentials. Submitting logs in and pre-fills the Cookie.\n\nLast error: {error}",
+        "description": "{error}Fill in the browserless endpoint and credentials. Submitting logs in and pre-fills the Cookie.",
         "data": {
           "browser_url": "Headless browser URL",
           "browser_token": "Browserless token (optional)",
@@ -75,7 +75,7 @@
       },
       "reauth_browser": {
         "title": "Get a Cookie with a browser",
-        "description": "Fill in the browserless endpoint and credentials. Submitting logs in and pre-fills the Cookie.\n\nLast error: {error}",
+        "description": "{error}Fill in the browserless endpoint and credentials. Submitting logs in and pre-fills the Cookie.",
         "data": {
           "browser_url": "Headless browser URL",
           "browser_token": "Browserless token (optional)",
